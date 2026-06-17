@@ -162,6 +162,26 @@ export interface DailyEnergySummary {
   cost: number;
 }
 
+export interface MaterialPlanItem {
+  materialName: string;
+  needKg: number;
+  stock: number;
+  sufficient: boolean;
+}
+
+export interface MaterialPlan {
+  id: string;
+  orderId: string;
+  orderNo: string;
+  formulaId: string;
+  formulaName: string;
+  planQty: number;
+  items: MaterialPlanItem[];
+  allSufficient: boolean;
+  createdAt: string;
+  status: 'pending' | 'ready';
+}
+
 export interface DashboardStats {
   todayOutput: number;
   runningRate: number;

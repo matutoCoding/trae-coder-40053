@@ -34,7 +34,7 @@ const formatRuntime = (minutes: number): string => {
 };
 
 const Dashboard: React.FC = () => {
-  const { dashboardStats, hourlyOutput, defectStats, machines, orders } = useAppStore();
+  const { dashboardStats, hourlyOutput, defectStats, machines, orders, molds } = useAppStore();
 
   const activeOrders = orders
     .filter(o => o.status !== 'completed')
@@ -163,37 +163,78 @@ const Dashboard: React.FC = () => {
             {machines.map((machine) => {
               const status = machineStatusMap[machine.status];
               const StatusIcon = status.icon;
+              const currentOrder = orders.find(o => o.id === machine.currentOrder);
+              const currentMold = molds.find(m => m.id === machine.currentMold);
               return (
                 <div
                   key={machine.id}
-                  className="flex items-center justify-between p-3 bg-industrial-900/50 rounded-lg border border-industrial-700"
+                  className="flex flex-col p-3 bg-industrial-900/50 rounded-lg border border-industrial-700 space-y-2"
                 >
-                  <div className="flex items-center space-x-3">
-                    <span className={`status-dot ${status.className}`}></span>
-                    <div>
-                      <p className="text-white text-sm font-medium">{machine.machineNo} · {machine.name}</p>
-                      <p className="text-industrial-400 text-xs">{machine.tonnage}T</p>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <span className={`status-dot ${status.className}`}></span>
+                      <div>
+                        <p className="text-white text-sm font-medium">{machine.machineNo} · {machine.name}</p>
+                        <p className="text-industrial-400 text-xs">{machine.tonnage}T</p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center space-x-4">
-                    <div className="text-right">
-                      <span className={`badge ${status.className}`}>
-                        <StatusIcon className="w-3 h-3 mr-1" />
-                        {status.label}
-                      </span>
-                      {machine.status === 'running' && machine.runtime > 0 && (
-                        <div className="flex items-center justify-end mt-1 text-xs text-industrial-400">
-                          <Clock className="w-3 h-3 mr-1" />
-                          {formatRuntime(machine.runtime)}
+                    <div className="flex items-center space-x-4">
+                      <div className="text-right">
+                        <span className={`badge ${status.className}`}>
+                          <StatusIcon className="w-3 h-3 mr-1" />
+                          {status.label}
+                        </span>
+                        {machine.status === 'running' && machine.runtime > 0 && (
+                          <div className="flex items-center justify-end mt-1 text-xs text-industrial-400">
+                            <Clock className="w-3 h-3 mr-1" />
+                            {formatRuntime(machine.runtime)}
+                          </div>
+                        )}
+                      </div>
+                      {machine.operator && (
+                        <div className="text-right text-xs">
+                          <p className="text-industrial-400">操作员</p>
+                          <p className="text-white">{machine.operator}</p>
                         </div>
                       )}
                     </div>
-                    {machine.operator && (
-                      <div className="text-right text-xs">
-                        <p className="text-industrial-400">操作员</p>
-                        <p className="text-white">{machine.operator}</p>
-                      </div>
-                    )}
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-xs pt-2 border-t border-industrial-700/60">
+                    <div>
+                      <p className="text-industrial-400 mb-1">订单</p>
+                      {currentOrder ? (
+                        <button
+                          className="text-primary-400 hover:underline text-left"
+                          onClick={() => {
+                            window.location.hash = '#/orders';
+                            useAppStore.getState().setActiveTab('orders');
+                          }}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <p className="font-medium">{currentOrder.orderNo}</p>
+                          <p className="truncate">{currentOrder.productName}</p>
+                        </button>
+                      ) : (
+                        <p className="text-industrial-500">未分配</p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-industrial-400 mb-1">模具</p>
+                      {currentMold ? (
+                        <div className="text-white">
+                          <p className="font-medium">{currentMold.moldNo}</p>
+                          <p className="truncate">{currentMold.name}</p>
+                        </div>
+                      ) : (
+                        <p className="text-industrial-500">未安装</p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-industrial-400 mb-1">计划日期</p>
+                      <p className="text-white">
+                        {currentOrder?.scheduledDate || '-'}
+                      </p>
+                    </div>
                   </div>
                 </div>
               );
@@ -210,12 +251,18 @@ const Dashboard: React.FC = () => {
             {activeOrders.map((order) => {
               const progress = Math.round((order.completedQty / order.quantity) * 100);
               const status = orderStatusMap[order.status];
+              const relatedMachine = machines.find(m => m.id === order.machineId);
               return (
                 <div key={order.id} className="p-3 bg-industrial-900/50 rounded-lg border border-industrial-700">
                   <div className="flex items-center justify-between mb-2">
                     <div>
                       <p className="text-white text-sm font-medium">{order.orderNo}</p>
                       <p className="text-industrial-400 text-xs">{order.productName} · {order.customer}</p>
+                      {relatedMachine && (
+                        <p className="text-primary-400 text-xs mt-0.5">
+                          机台: {relatedMachine.machineNo} {relatedMachine.name}
+                        </p>
+                      )}
                     </div>
                     <span className={`badge ${status.className}`}>{status.label}</span>
                   </div>

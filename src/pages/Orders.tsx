@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Filter, Plus, Calendar, User, Box, X, Settings, Layers, CheckCircle2 } from 'lucide-react';
+import { Search, Filter, Plus, Calendar, User, Box, X, Settings, Layers, CheckCircle2, AlertTriangle, ChevronLeft, ChevronRight, List, GanttChart } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
 import { useAppStore } from '@/store';
-import type { Order, OrderStatus } from '@/types';
+import type { Order, OrderStatus, Machine } from '@/types';
 
 const statusOptions: { value: OrderStatus | 'all'; label: string; className: string }[] = [
   { value: 'all', label: '全部', className: 'badge-secondary' },
@@ -18,6 +18,8 @@ const statusBadgeMap: Record<OrderStatus, { label: string; className: string }> 
   producing: { label: '生产中', className: 'badge-warning' },
   completed: { label: '已完成', className: 'badge-success' },
 };
+
+const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
 interface ScheduleModalProps {
   order: Order;
@@ -165,11 +167,167 @@ const ScheduleModal: React.FC<ScheduleModalProps> = ({ order, onClose, onSave })
   );
 };
 
+interface QuickScheduleModalProps {
+  machineId: string;
+  machineName: string;
+  scheduledDate: string;
+  onClose: () => void;
+  onSave: (orderId: string, machineId: string, moldId: string, scheduledDate: string) => void;
+}
+
+const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({ machineId, machineName, scheduledDate, onClose, onSave }) => {
+  const { orders, molds, machines } = useAppStore();
+  const [orderId, setOrderId] = useState('');
+  const [moldId, setMoldId] = useState('');
+
+  const pendingOrders = orders.filter(o => o.status === 'pending');
+  const availableMolds = molds.filter(m => m.status === 'off_machine');
+  const selectedOrder = orders.find(o => o.id === orderId);
+  const selectedMold = molds.find(m => m.id === moldId);
+  const machineObj = machines.find(m => m.id === machineId);
+
+  const canSave = orderId && moldId && scheduledDate;
+
+  const handleSave = () => {
+    if (canSave) {
+      onSave(orderId, machineId, moldId, scheduledDate);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="card-industrial w-full max-w-lg p-0 animate-slide-in" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-industrial-700">
+          <div>
+            <h3 className="text-white font-semibold text-base">快速排产</h3>
+            <p className="text-industrial-400 text-sm mt-0.5">{machineName} · {scheduledDate}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-industrial-700 transition-colors">
+            <X className="w-5 h-5 text-industrial-300" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {machineObj && (
+            <div className="p-3 bg-industrial-900/50 rounded-lg text-xs text-industrial-300 flex items-center gap-4">
+              <span><span className="text-industrial-500">机台:</span> {machineObj.machineNo} {machineObj.name}</span>
+              <span><span className="text-industrial-500">吨位:</span> {machineObj.tonnage}T</span>
+              <span><span className="text-industrial-500">日期:</span> {scheduledDate}</span>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm text-industrial-300 mb-1.5">
+              <Box className="w-3.5 h-3.5 inline mr-1.5" />
+              选择订单 <span className="text-red-400">*</span>
+            </label>
+            <select
+              value={orderId}
+              onChange={e => setOrderId(e.target.value)}
+              className="input-industrial appearance-none"
+            >
+              <option value="">请选择待排产订单</option>
+              {pendingOrders.map(o => (
+                <option key={o.id} value={o.id}>
+                  {o.orderNo} - {o.productName} ({o.customer} / {o.quantity.toLocaleString()}件)
+                </option>
+              ))}
+            </select>
+            {selectedOrder && (
+              <div className="mt-2 p-2 bg-industrial-900/50 rounded-lg text-xs text-industrial-300 grid grid-cols-2 gap-2">
+                <span>客户: {selectedOrder.customer}</span>
+                <span>数量: {selectedOrder.quantity.toLocaleString()}</span>
+                <span>原料: {selectedOrder.material}</span>
+                <span>交期: {selectedOrder.dueDate}</span>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm text-industrial-300 mb-1.5">
+              <Layers className="w-3.5 h-3.5 inline mr-1.5" />
+              选择模具 <span className="text-red-400">*</span>
+            </label>
+            <select
+              value={moldId}
+              onChange={e => setMoldId(e.target.value)}
+              className="input-industrial appearance-none"
+            >
+              <option value="">请选择模具</option>
+              {availableMolds.map(m => (
+                <option key={m.id} value={m.id}>
+                  {m.moldNo} {m.name} ({m.cavities}腔)
+                </option>
+              ))}
+            </select>
+            {selectedMold && (
+              <div className="mt-2 p-2 bg-industrial-900/50 rounded-lg text-xs text-industrial-300 flex items-center gap-3">
+                <span>腔数: {selectedMold.cavities}</span>
+                <span>寿命: {selectedMold.usageCount}/{selectedMold.lifeCycle}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 p-5 border-t border-industrial-700">
+          <button onClick={onClose} className="btn-secondary">取消</button>
+          <button
+            onClick={handleSave}
+            disabled={!canSave}
+            className={`btn-primary flex items-center gap-2 ${!canSave ? 'opacity-40 cursor-not-allowed' : ''}`}
+          >
+            <CheckCircle2 size={16} />
+            确认排产
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const getMachineStatusDot = (status: Machine['status']) => {
+  switch (status) {
+    case 'running':
+      return 'bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.6)]';
+    case 'idle':
+      return 'bg-emerald-500';
+    case 'maintenance':
+      return 'bg-red-500';
+    default:
+      return 'bg-industrial-500';
+  }
+};
+
+const getOrderCardStyle = (status: OrderStatus) => {
+  switch (status) {
+    case 'scheduled':
+      return 'bg-primary-500/15 border-primary-500/60 hover:bg-primary-500/25';
+    case 'producing':
+      return 'bg-amber-500/15 border-amber-500/60 hover:bg-amber-500/25';
+    case 'completed':
+      return 'bg-emerald-500/15 border-emerald-500/60 hover:bg-emerald-500/25';
+    default:
+      return 'bg-industrial-700/50 border-industrial-600';
+  }
+};
+
+const getOrderProgressColor = (progress: number): string => {
+  if (progress >= 100) return 'bg-emerald-500';
+  if (progress >= 70) return 'bg-primary-500';
+  if (progress >= 30) return 'bg-amber-500';
+  return 'bg-red-500';
+};
+
+type ViewTab = 'list' | 'timeline';
+
 const Orders: React.FC = () => {
   const { orders, machines, scheduleOrder } = useAppStore();
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all');
   const [schedulingOrder, setSchedulingOrder] = useState<Order | null>(null);
+  const [activeTab, setActiveTab] = useState<ViewTab>('list');
+  const [quickSchedule, setQuickSchedule] = useState<{ machineId: string; machineName: string; scheduledDate: string } | null>(null);
+  const dateScrollRef = React.useRef<HTMLDivElement>(null);
 
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
@@ -181,6 +339,59 @@ const Orders: React.FC = () => {
       return matchSearch && matchStatus;
     });
   }, [orders, searchText, statusFilter]);
+
+  const dates = useMemo(() => {
+    const result: { date: string; display: string; shortDate: string; weekDay: string; isToday: boolean }[] = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(today);
+      d.setDate(today.getDate() + i);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const dateStr = `${yyyy}-${mm}-${dd}`;
+      result.push({
+        date: dateStr,
+        display: `${mm}-${dd}`,
+        shortDate: `${mm}/${dd}`,
+        weekDay: weekDays[d.getDay()],
+        isToday: i === 0,
+      });
+    }
+    return result;
+  }, []);
+
+  const conflictMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    orders.forEach((o) => {
+      if (o.scheduledDate && o.machineId && ['scheduled', 'producing', 'completed'].includes(o.status)) {
+        const key = `${o.machineId}_${o.scheduledDate}`;
+        map[key] = (map[key] || 0) + 1;
+      }
+    });
+    return map;
+  }, [orders]);
+
+  const timelineStats = useMemo(() => {
+    const dateRange = dates.map(d => d.date);
+    const scheduledOrders = orders.filter(o =>
+      o.scheduledDate &&
+      o.machineId &&
+      dateRange.includes(o.scheduledDate) &&
+      ['scheduled', 'producing', 'completed'].includes(o.status)
+    );
+    const scheduledMachineIds = new Set(scheduledOrders.map(o => o.machineId!));
+    let conflictCount = 0;
+    Object.values(conflictMap).forEach(cnt => {
+      if (cnt >= 2) conflictCount++;
+    });
+    return {
+      machineCount: scheduledMachineIds.size,
+      orderCount: scheduledOrders.length,
+      conflictCount,
+    };
+  }, [orders, dates, conflictMap]);
 
   const getProgressColor = (progress: number): string => {
     if (progress >= 100) return 'bg-emerald-500';
@@ -198,6 +409,15 @@ const Orders: React.FC = () => {
   const handleSchedule = (orderId: string, machineId: string, moldId: string, scheduledDate: string) => {
     scheduleOrder(orderId, machineId, moldId, scheduledDate);
     setSchedulingOrder(null);
+    setQuickSchedule(null);
+  };
+
+  const handleQuickScheduleClick = (machine: Machine, date: string) => {
+    setQuickSchedule({
+      machineId: machine.id,
+      machineName: `${machine.machineNo} ${machine.name}`,
+      scheduledDate: date,
+    });
   };
 
   const stats = useMemo(() => {
@@ -207,6 +427,24 @@ const Orders: React.FC = () => {
     const completed = orders.filter((o) => o.status === 'completed').length;
     return { total, pending, producing, completed };
   }, [orders]);
+
+  const getOrdersForCell = (machineId: string, date: string) => {
+    return orders.filter(o =>
+      o.scheduledDate === date &&
+      o.machineId === machineId &&
+      ['scheduled', 'producing', 'completed'].includes(o.status)
+    );
+  };
+
+  const scrollDates = (direction: 'left' | 'right') => {
+    if (dateScrollRef.current) {
+      const scrollAmount = 200;
+      dateScrollRef.current.scrollBy({
+        left: direction === 'left' ? -scrollAmount : scrollAmount,
+        behavior: 'smooth',
+      });
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -260,6 +498,31 @@ const Orders: React.FC = () => {
         </div>
       </div>
 
+      <div className="card-industrial p-1.5 flex items-center gap-1 w-fit">
+        <button
+          onClick={() => setActiveTab('list')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            activeTab === 'list'
+              ? 'bg-primary-600 text-white shadow-lg shadow-primary-600/20'
+              : 'text-industrial-300 hover:bg-industrial-700 hover:text-white'
+          }`}
+        >
+          <List className="w-4 h-4" />
+          列表视图
+        </button>
+        <button
+          onClick={() => setActiveTab('timeline')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            activeTab === 'timeline'
+              ? 'bg-primary-600 text-white shadow-lg shadow-primary-600/20'
+              : 'text-industrial-300 hover:bg-industrial-700 hover:text-white'
+          }`}
+        >
+          <GanttChart className="w-4 h-4" />
+          排产时间轴
+        </button>
+      </div>
+
       <div className="card-industrial p-4">
         <div className="flex flex-col md:flex-row md:items-center gap-3">
           <div className="relative flex-1">
@@ -293,137 +556,355 @@ const Orders: React.FC = () => {
         </div>
       </div>
 
-      <div className="card-industrial overflow-hidden">
-        <div className="overflow-x-auto scrollbar-thin">
-          <table className="table-industrial">
-            <thead>
-              <tr>
-                <th>订单号</th>
-                <th>产品名称</th>
-                <th>客户</th>
-                <th>数量</th>
-                <th>完成量</th>
-                <th className="w-48">生产进度</th>
-                <th>机台</th>
-                <th>状态</th>
-                <th>排产日期</th>
-                <th>交期</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredOrders.length === 0 ? (
+      {activeTab === 'list' ? (
+        <div className="card-industrial overflow-hidden">
+          <div className="overflow-x-auto scrollbar-thin">
+            <table className="table-industrial">
+              <thead>
                 <tr>
-                  <td colSpan={11} className="text-center py-12 text-industrial-400">
-                    暂无符合条件的订单数据
-                  </td>
+                  <th>订单号</th>
+                  <th>产品名称</th>
+                  <th>客户</th>
+                  <th>数量</th>
+                  <th>完成量</th>
+                  <th className="w-48">生产进度</th>
+                  <th>机台</th>
+                  <th>状态</th>
+                  <th>排产日期</th>
+                  <th>交期</th>
+                  <th>操作</th>
                 </tr>
-              ) : (
-                filteredOrders.map((order: Order) => {
-                  const progress = Math.round((order.completedQty / order.quantity) * 100);
-                  const badge = statusBadgeMap[order.status];
-                  const machineObj = order.machineId ? machines.find(m => m.id === order.machineId) : null;
-                  return (
-                    <tr key={order.id} className="align-middle">
-                      <td>
-                        <span className="text-white font-medium">{order.orderNo}</span>
-                      </td>
-                      <td>
-                        <div>
-                          <p className="text-white">{order.productName}</p>
-                          <p className="text-industrial-400 text-xs">{order.material} · {order.color}</p>
-                        </div>
-                      </td>
-                      <td>
-                        <div className="flex items-center text-industrial-300">
-                          <User className="w-3.5 h-3.5 mr-1.5 text-industrial-500" />
-                          {order.customer}
-                        </div>
-                      </td>
-                      <td className="text-white">
-                        {order.quantity.toLocaleString()}
-                      </td>
-                      <td className="text-industrial-300">
-                        {order.completedQty.toLocaleString()}
-                      </td>
-                      <td>
-                        <div className="w-full">
-                          <div className="flex justify-between text-xs text-industrial-400 mb-1">
-                            <span></span>
-                            <span className="font-medium text-white">{progress}%</span>
+              </thead>
+              <tbody>
+                {filteredOrders.length === 0 ? (
+                  <tr>
+                    <td colSpan={11} className="text-center py-12 text-industrial-400">
+                      暂无符合条件的订单数据
+                    </td>
+                  </tr>
+                ) : (
+                  filteredOrders.map((order: Order) => {
+                    const progress = Math.round((order.completedQty / order.quantity) * 100);
+                    const badge = statusBadgeMap[order.status];
+                    const machineObj = order.machineId ? machines.find(m => m.id === order.machineId) : null;
+                    return (
+                      <tr key={order.id} className="align-middle">
+                        <td>
+                          <span className="text-white font-medium">{order.orderNo}</span>
+                        </td>
+                        <td>
+                          <div>
+                            <p className="text-white">{order.productName}</p>
+                            <p className="text-industrial-400 text-xs">{order.material} · {order.color}</p>
                           </div>
-                          <div className="w-full bg-industrial-700 rounded-full h-2">
-                            <div
-                              className={`h-2 rounded-full transition-all ${getProgressColor(progress)}`}
-                              style={{ width: `${Math.min(progress, 100)}%` }}
-                            ></div>
+                        </td>
+                        <td>
+                          <div className="flex items-center text-industrial-300">
+                            <User className="w-3.5 h-3.5 mr-1.5 text-industrial-500" />
+                            {order.customer}
                           </div>
-                        </div>
-                      </td>
-                      <td className="text-industrial-300">
-                        {machineObj ? (
-                          <span className="text-primary-400">{machineObj.machineNo}</span>
-                        ) : '-'}
-                      </td>
-                      <td>
-                        <span className={`badge ${badge.className}`}>{badge.label}</span>
-                      </td>
-                      <td>
-                        <div className="flex items-center text-industrial-300 text-xs">
-                          <Calendar className="w-3.5 h-3.5 mr-1.5 text-industrial-500" />
-                          {order.scheduledDate || '-'}
-                        </div>
-                      </td>
-                      <td>
-                        <div className="flex items-center text-xs">
-                          <Calendar className="w-3.5 h-3.5 mr-1.5 text-industrial-500" />
-                          <span className={
-                            new Date(order.dueDate) < new Date() && order.status !== 'completed'
-                              ? 'text-red-400 font-medium'
-                              : 'text-industrial-300'
-                          }>
-                            {order.dueDate}
-                          </span>
-                        </div>
-                      </td>
-                      <td>
-                        {order.status === 'pending' && (
-                          <button
-                            onClick={() => setSchedulingOrder(order)}
-                            className="btn-primary px-3 py-1.5 text-xs flex items-center gap-1.5"
-                          >
-                            <Settings size={12} />
-                            排产
-                          </button>
-                        )}
-                        {order.status === 'scheduled' && (
-                          <span className="text-xs text-primary-400 flex items-center gap-1">
-                            <CheckCircle2 size={12} />
-                            已排产
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-        <div className="px-4 py-3 border-t border-industrial-700 flex items-center justify-between text-xs text-industrial-400">
-          <span>共 {filteredOrders.length} 条记录</span>
-          <div className="flex items-center space-x-2">
-            <button className="btn-secondary px-3 py-1 text-xs">上一页</button>
-            <span className="text-white">1</span>
-            <button className="btn-secondary px-3 py-1 text-xs">下一页</button>
+                        </td>
+                        <td className="text-white">
+                          {order.quantity.toLocaleString()}
+                        </td>
+                        <td className="text-industrial-300">
+                          {order.completedQty.toLocaleString()}
+                        </td>
+                        <td>
+                          <div className="w-full">
+                            <div className="flex justify-between text-xs text-industrial-400 mb-1">
+                              <span></span>
+                              <span className="font-medium text-white">{progress}%</span>
+                            </div>
+                            <div className="w-full bg-industrial-700 rounded-full h-2">
+                              <div
+                                className={`h-2 rounded-full transition-all ${getProgressColor(progress)}`}
+                                style={{ width: `${Math.min(progress, 100)}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="text-industrial-300">
+                          {machineObj ? (
+                            <span className="text-primary-400">{machineObj.machineNo}</span>
+                          ) : '-'}
+                        </td>
+                        <td>
+                          <span className={`badge ${badge.className}`}>{badge.label}</span>
+                        </td>
+                        <td>
+                          <div className="flex items-center text-industrial-300 text-xs">
+                            <Calendar className="w-3.5 h-3.5 mr-1.5 text-industrial-500" />
+                            {order.scheduledDate || '-'}
+                          </div>
+                        </td>
+                        <td>
+                          <div className="flex items-center text-xs">
+                            <Calendar className="w-3.5 h-3.5 mr-1.5 text-industrial-500" />
+                            <span className={
+                              new Date(order.dueDate) < new Date() && order.status !== 'completed'
+                                ? 'text-red-400 font-medium'
+                                : 'text-industrial-300'
+                            }>
+                              {order.dueDate}
+                            </span>
+                          </div>
+                        </td>
+                        <td>
+                          {order.status === 'pending' && (
+                            <button
+                              onClick={() => setSchedulingOrder(order)}
+                              className="btn-primary px-3 py-1.5 text-xs flex items-center gap-1.5"
+                            >
+                              <Settings size={12} />
+                              排产
+                            </button>
+                          )}
+                          {order.status === 'scheduled' && (
+                            <span className="text-xs text-primary-400 flex items-center gap-1">
+                              <CheckCircle2 size={12} />
+                              已排产
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="px-4 py-3 border-t border-industrial-700 flex items-center justify-between text-xs text-industrial-400">
+            <span>共 {filteredOrders.length} 条记录</span>
+            <div className="flex items-center space-x-2">
+              <button className="btn-secondary px-3 py-1 text-xs">上一页</button>
+              <span className="text-white">1</span>
+              <button className="btn-secondary px-3 py-1 text-xs">下一页</button>
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="card-industrial p-0 overflow-hidden">
+          <div className="px-5 py-4 border-b border-industrial-700 flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-4 text-sm">
+              <span className="text-industrial-400">
+                共 <span className="text-white font-semibold">{timelineStats.machineCount}</span> 台机台排产
+              </span>
+              <span className="w-px h-4 bg-industrial-600"></span>
+              <span className="text-industrial-400">
+                <span className="text-white font-semibold">{timelineStats.orderCount}</span> 个订单
+              </span>
+              <span className="w-px h-4 bg-industrial-600"></span>
+              <span className={timelineStats.conflictCount > 0 ? 'text-red-400' : 'text-industrial-400'}>
+                <AlertTriangle className={`w-3.5 h-3.5 inline mr-1 ${timelineStats.conflictCount > 0 ? '' : 'opacity-40'}`} />
+                <span className="font-semibold">{timelineStats.conflictCount}</span> 个冲突
+              </span>
+            </div>
+            <div className="flex items-center gap-4 text-xs text-industrial-400">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                <span>空闲</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-[0_0_4px_rgba(245,158,11,0.6)]"></span>
+                <span>运行中</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+                <span>维护</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="relative">
+            <div className="flex">
+              <div className="w-44 shrink-0 border-r border-industrial-700 bg-industrial-850/50">
+                <div className="h-16 px-4 flex items-center justify-between border-b border-industrial-700 sticky top-0 bg-industrial-850/95 z-10">
+                  <span className="text-xs text-industrial-400 font-medium">机台 / 日期</span>
+                </div>
+                <div>
+                  {machines.map((machine) => (
+                    <div
+                      key={machine.id}
+                      className="h-36 px-4 flex items-center border-b border-industrial-700/60 hover:bg-industrial-700/20 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 w-full">
+                        <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${getMachineStatusDot(machine.status)}`}></span>
+                        <div className="min-w-0">
+                          <p className="text-white font-semibold text-sm truncate">{machine.machineNo}</p>
+                          <p className="text-industrial-400 text-xs truncate">{machine.tonnage}T · {machine.name}</p>
+                          {machine.operator && (
+                            <p className="text-industrial-500 text-[11px] truncate mt-0.5">
+                              <User className="w-3 h-3 inline mr-1 opacity-70" />
+                              {machine.operator}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-x-auto scrollbar-thin" ref={dateScrollRef}>
+                <div className="min-w-[980px]">
+                  <div className="flex items-sticky sticky top-0 bg-industrial-850/95 z-10 border-b border-industrial-700">
+                    <button
+                      onClick={() => scrollDates('left')}
+                      className="w-8 shrink-0 flex items-center justify-center text-industrial-400 hover:text-white hover:bg-industrial-700/50 transition-colors"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    {dates.map((d) => (
+                      <div
+                        key={d.date}
+                        className={`flex-1 min-w-[140px] h-16 px-3 py-2 flex flex-col items-center justify-center border-r border-industrial-700 last:border-r-0 transition-colors ${
+                          d.isToday
+                            ? 'bg-primary-500/10 border-b-2 border-b-primary-500'
+                            : ''
+                        }`}
+                      >
+                        <div className={`text-xs px-2 py-0.5 rounded-full mb-1 ${
+                          d.isToday ? 'bg-primary-600 text-white font-medium' : 'text-industrial-500'
+                        }`}>
+                          {d.weekDay}
+                        </div>
+                        <span className={`font-bold text-lg ${d.isToday ? 'text-white' : 'text-industrial-200'}`}>
+                          {d.display}
+                        </span>
+                        {d.isToday && (
+                          <span className="text-[10px] text-primary-400 mt-0.5">今天</span>
+                        )}
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => scrollDates('right')}
+                      className="w-8 shrink-0 flex items-center justify-center text-industrial-400 hover:text-white hover:bg-industrial-700/50 transition-colors"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div>
+                    {machines.map((machine) => (
+                      <div key={machine.id} className="flex border-b border-industrial-700/60 last:border-b-0">
+                        {dates.map((d) => {
+                          const cellOrders = getOrdersForCell(machine.id, d.date);
+                          const key = `${machine.id}_${d.date}`;
+                          const hasConflict = (conflictMap[key] || 0) >= 2;
+                          return (
+                            <div
+                              key={key}
+                              onClick={() => handleQuickScheduleClick(machine, d.date)}
+                              className={`flex-1 min-w-[140px] h-36 border-r border-industrial-700/60 last:border-r-0 p-2 relative cursor-pointer transition-colors group ${
+                                hasConflict ? 'bg-red-500/5' : 'hover:bg-industrial-700/30'
+                              }`}
+                            >
+                              {hasConflict && (
+                                <div className="absolute top-1.5 right-1.5 z-10">
+                                  <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-red-500/90 text-white font-medium shadow-lg">
+                                    <AlertTriangle className="w-3 h-3" />
+                                    排产冲突
+                                  </span>
+                                </div>
+                              )}
+
+                              {cellOrders.length === 0 ? (
+                                <div className="w-full h-full flex items-center justify-center text-industrial-600 text-xs opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <span className="flex items-center gap-1 px-2 py-1 rounded bg-industrial-700/40 text-industrial-400">
+                                    <Plus className="w-3 h-3" />
+                                    点击排产
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="space-y-1.5">
+                                  {cellOrders.map((order, idx) => {
+                                    const progress = Math.round((order.completedQty / order.quantity) * 100);
+                                    return (
+                                      <div
+                                        key={order.id}
+                                        className={`relative rounded-lg border px-2 py-1.5 transition-all ${getOrderCardStyle(order.status)} ${
+                                          hasConflict && idx > 0 ? 'ring-1 ring-red-500/40' : ''
+                                        }`}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (order.status === 'pending') {
+                                            setSchedulingOrder(order);
+                                          }
+                                        }}
+                                      >
+                                        <div className="text-[11px] font-semibold text-white truncate leading-tight">
+                                          {order.orderNo}
+                                        </div>
+                                        <div className="text-[10px] text-industrial-300 truncate leading-tight mt-0.5">
+                                          {order.productName}
+                                        </div>
+                                        <div className="mt-1">
+                                          <div className="flex justify-between text-[9px] text-industrial-400 mb-0.5">
+                                            <span>{order.completedQty.toLocaleString()}</span>
+                                            <span className="font-medium">{progress}%</span>
+                                            <span>{order.quantity.toLocaleString()}</span>
+                                          </div>
+                                          <div className="w-full bg-industrial-700/60 rounded-full h-1">
+                                            <div
+                                              className={`h-1 rounded-full transition-all ${getOrderProgressColor(progress)}`}
+                                              style={{ width: `${Math.min(progress, 100)}%` }}
+                                            ></div>
+                                          </div>
+                                        </div>
+                                        {hasConflict && idx > 0 && (
+                                          <div className="absolute -top-0.5 -left-0.5 w-2 h-2 bg-red-500 rounded-full shadow-[0_0_4px_rgba(239,68,68,0.8)]"></div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="px-5 py-3 border-t border-industrial-700 flex items-center justify-between text-xs text-industrial-400">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded border bg-primary-500/15 border-primary-500/60"></span>
+                <span>已排产</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded border bg-amber-500/15 border-amber-500/60"></span>
+                <span>生产中</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded border bg-emerald-500/15 border-emerald-500/60"></span>
+                <span>已完成</span>
+              </div>
+            </div>
+            <span>共 {machines.length} 台机台 · 显示未来 7 天排产</span>
+          </div>
+        </div>
+      )}
 
       {schedulingOrder && (
         <ScheduleModal
           order={schedulingOrder}
           onClose={() => setSchedulingOrder(null)}
+          onSave={handleSchedule}
+        />
+      )}
+
+      {quickSchedule && (
+        <QuickScheduleModal
+          machineId={quickSchedule.machineId}
+          machineName={quickSchedule.machineName}
+          scheduledDate={quickSchedule.scheduledDate}
+          onClose={() => setQuickSchedule(null)}
           onSave={handleSchedule}
         />
       )}

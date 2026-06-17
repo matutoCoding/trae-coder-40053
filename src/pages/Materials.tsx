@@ -3,25 +3,32 @@ import PageHeader from '@/components/PageHeader';
 import { useAppStore } from '@/store';
 import {
   Package, Thermometer, Palette, Plus, AlertTriangle,
-  CheckCircle2, Clock, Calculator, ShoppingCart, Box
+  CheckCircle2, Clock, Calculator, ShoppingCart, Box,
+  ClipboardList, ChevronDown, ChevronRight, Search
 } from 'lucide-react';
 
-type TabKey = 'materials' | 'drying' | 'formula' | 'calc';
+type TabKey = 'materials' | 'drying' | 'formula' | 'calc' | 'plans';
 
 const tabConfig = [
   { key: 'materials' as TabKey, label: '原料管理', icon: Package },
   { key: 'drying' as TabKey, label: '烘干记录', icon: Thermometer },
   { key: 'formula' as TabKey, label: '色母配方', icon: Palette },
   { key: 'calc' as TabKey, label: '配方试算', icon: Calculator },
+  { key: 'plans' as TabKey, label: '备料清单', icon: ClipboardList },
 ];
 
 export default function Materials() {
   const [activeTab, setActiveTab] = useState<TabKey>('materials');
-  const { materials, dryingRecords, colorFormulas, orders } = useAppStore();
+  const { materials, dryingRecords, colorFormulas, orders, materialPlans, saveMaterialPlan, setActiveTab: setStoreActiveTab } = useAppStore();
 
   const [calcOrderId, setCalcOrderId] = useState('');
   const [calcFormulaId, setCalcFormulaId] = useState('');
   const [calcQty, setCalcQty] = useState<number>(0);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  const [planSearch, setPlanSearch] = useState('');
+  const [planStatusFilter, setPlanStatusFilter] = useState<'all' | 'pending' | 'ready'>('all');
+  const [expandedPlanId, setExpandedPlanId] = useState<string | null>(null);
 
   const selectedOrder = orders.find(o => o.id === calcOrderId);
   const selectedFormula = colorFormulas.find(f => f.id === calcFormulaId);
@@ -69,10 +76,50 @@ export default function Materials() {
     };
   }, [effectiveFormula, calcQty, baseMaterial, materials]);
 
+  const existingPlanForOrder = useMemo(() => {
+    if (!selectedOrder) return null;
+    return materialPlans.find(p => p.orderId === selectedOrder.id) ?? null;
+  }, [selectedOrder, materialPlans]);
+
   const handleOrderChange = (orderId: string) => {
     setCalcOrderId(orderId);
     setCalcFormulaId('');
     setCalcQty(0);
+    setSaveSuccess(false);
+  };
+
+  const handleSaveMaterialPlan = () => {
+    if (!selectedOrder || !effectiveFormula || !calcResults) return;
+    saveMaterialPlan({
+      orderId: selectedOrder.id,
+      orderNo: selectedOrder.orderNo,
+      formulaId: effectiveFormula.id,
+      formulaName: effectiveFormula.name,
+      planQty: calcQty,
+      items: [
+        { materialName: baseMaterial!.name, needKg: calcResults.baseNeed, stock: calcResults.baseStock, sufficient: calcResults.baseSufficient },
+        ...calcResults.colorMasterNeeds.map(c => ({ materialName: c.name, needKg: c.needKg, stock: c.stock, sufficient: c.sufficient }))
+      ],
+      allSufficient: calcResults.allSufficient
+    });
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 3000);
+  };
+
+  const filteredMaterialPlans = useMemo(() => {
+    return materialPlans.filter(p => {
+      const search = planSearch.toLowerCase().trim();
+      const matchSearch = !search ||
+        p.orderNo.toLowerCase().includes(search) ||
+        p.formulaName.toLowerCase().includes(search);
+      const matchStatus = planStatusFilter === 'all' || p.status === planStatusFilter;
+      return matchSearch && matchStatus;
+    });
+  }, [materialPlans, planSearch, planStatusFilter]);
+
+  const handleOrderClick = (orderId: string) => {
+    setStoreActiveTab('orders');
+    window.location.hash = '#/orders';
   };
 
   return (
@@ -298,6 +345,18 @@ export default function Materials() {
                 />
               </div>
             </div>
+
+            {existingPlanForOrder && (
+              <div className="mt-4 p-3 bg-primary-900/20 border border-primary-700/50 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-primary-400" />
+                  <span className="text-primary-300 text-sm">
+                    该订单已有备料清单（创建于 {existingPlanForOrder.createdAt}，
+                    状态 {existingPlanForOrder.status === 'ready' ? '已备齐' : '待备料'}），新保存将追加一条记录
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
           {effectiveFormula && calcQty > 0 && calcResults && (
@@ -449,6 +508,35 @@ export default function Materials() {
                     </ul>
                   </div>
                 )}
+
+                <div className="mt-6 pt-4 border-t border-industrial-700">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      {!selectedOrder && (
+                        <p className="text-industrial-500 text-xs flex items-center gap-1">
+                          <AlertTriangle size={12} />
+                          请先选择订单后再保存备料清单
+                        </p>
+                      )}
+                      {saveSuccess && (
+                        <span className="badge badge-success flex items-center gap-1 w-fit">
+                          <CheckCircle2 size={12} />
+                          备料清单保存成功
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      onClick={handleSaveMaterialPlan}
+                      disabled={!selectedOrder}
+                      className={`btn-primary flex items-center gap-2 ${
+                        !selectedOrder ? 'opacity-50 cursor-not-allowed' : ''
+                      }`}
+                    >
+                      <ClipboardList size={16} />
+                      保存为备料清单
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -460,6 +548,189 @@ export default function Materials() {
               <p className="text-industrial-500 text-sm mt-1">选择订单后会自动匹配对应的产品配方</p>
             </div>
           )}
+        </div>
+      )}
+
+      {activeTab === 'plans' && (
+        <div className="space-y-5">
+          <div className="card-industrial p-5">
+            <div className="flex flex-col md:flex-row md:items-center gap-4 justify-between">
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-industrial-500" />
+                <input
+                  type="text"
+                  value={planSearch}
+                  onChange={e => setPlanSearch(e.target.value)}
+                  placeholder="搜索订单号 / 配方名"
+                  className="input-industrial pl-10"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPlanStatusFilter('all')}
+                  className={`px-4 py-2 text-sm rounded-lg transition-all ${
+                    planStatusFilter === 'all'
+                      ? 'bg-primary-600 text-white'
+                      : 'bg-industrial-800 text-industrial-300 hover:bg-industrial-700'
+                  }`}
+                >
+                  全部
+                </button>
+                <button
+                  onClick={() => setPlanStatusFilter('pending')}
+                  className={`px-4 py-2 text-sm rounded-lg transition-all ${
+                    planStatusFilter === 'pending'
+                      ? 'bg-amber-600 text-white'
+                      : 'bg-industrial-800 text-industrial-300 hover:bg-industrial-700'
+                  }`}
+                >
+                  待备料
+                </button>
+                <button
+                  onClick={() => setPlanStatusFilter('ready')}
+                  className={`px-4 py-2 text-sm rounded-lg transition-all ${
+                    planStatusFilter === 'ready'
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-industrial-800 text-industrial-300 hover:bg-industrial-700'
+                  }`}
+                >
+                  已备齐
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="card-industrial overflow-hidden">
+            {filteredMaterialPlans.length === 0 ? (
+              <div className="p-12 text-center">
+                <ClipboardList className="w-12 h-12 text-industrial-600 mx-auto mb-3" />
+                <p className="text-industrial-400">暂无备料清单</p>
+                <p className="text-industrial-500 text-sm mt-1">请先在"配方试算"中保存备料</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto scrollbar-thin">
+                <table className="table-industrial">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '40px' }}></th>
+                      <th>订单号</th>
+                      <th>配方名</th>
+                      <th>计划数量</th>
+                      <th>备料项</th>
+                      <th>状态</th>
+                      <th>创建时间</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredMaterialPlans.map((plan) => {
+                      const isExpanded = expandedPlanId === plan.id;
+                      return (
+                        <>
+                          <tr key={plan.id}>
+                            <td>
+                              <button
+                                onClick={() => setExpandedPlanId(isExpanded ? null : plan.id)}
+                                className="p-1 rounded hover:bg-industrial-800 text-industrial-400 hover:text-white transition-colors"
+                              >
+                                {isExpanded ? (
+                                  <ChevronDown size={16} />
+                                ) : (
+                                  <ChevronRight size={16} />
+                                )}
+                              </button>
+                            </td>
+                            <td
+                              onClick={() => handleOrderClick(plan.orderId)}
+                              className="cursor-pointer text-primary-400 hover:text-primary-300 font-medium"
+                            >
+                              {plan.orderNo}
+                            </td>
+                            <td className="text-white font-medium">{plan.formulaName}</td>
+                            <td className="text-industrial-300">{plan.planQty.toLocaleString()} 件</td>
+                            <td>
+                              <div className="flex flex-wrap gap-1.5">
+                                {plan.items.map((item, idx) => (
+                                  <span
+                                    key={idx}
+                                    className={`badge ${item.sufficient ? 'badge-success' : 'badge-danger'} text-xs`}
+                                  >
+                                    {item.materialName}
+                                  </span>
+                                ))}
+                              </div>
+                            </td>
+                            <td>
+                              {plan.status === 'ready' ? (
+                                <span className="badge badge-success flex items-center gap-1 w-fit">
+                                  <CheckCircle2 size={12} />
+                                  已备齐
+                                </span>
+                              ) : (
+                                <span className="badge badge-warning flex items-center gap-1 w-fit">
+                                  <Clock size={12} />
+                                  待备料
+                                </span>
+                              )}
+                            </td>
+                            <td className="text-industrial-400 text-sm">{plan.createdAt}</td>
+                          </tr>
+                          {isExpanded && (
+                            <tr key={`${plan.id}_detail`}>
+                              <td colSpan={7} className="bg-industrial-900/50 border-b border-industrial-700">
+                                <div className="p-4">
+                                  <p className="text-sm text-industrial-300 font-medium mb-3">备料项详情</p>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                    {plan.items.map((item, idx) => (
+                                      <div
+                                        key={idx}
+                                        className="p-3 rounded-lg border border-industrial-700 bg-industrial-800/50"
+                                      >
+                                        <div className="flex items-center justify-between mb-2">
+                                          <span className="text-white font-medium text-sm">
+                                            {item.materialName}
+                                          </span>
+                                          {item.sufficient ? (
+                                            <span className="badge badge-success text-xs">
+                                              充足
+                                            </span>
+                                          ) : (
+                                            <span className="badge badge-danger text-xs">
+                                              不足
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="grid grid-cols-3 gap-2 text-xs">
+                                          <div>
+                                            <p className="text-industrial-500">需要kg</p>
+                                            <p className="text-white">{item.needKg}</p>
+                                          </div>
+                                          <div>
+                                            <p className="text-industrial-500">当前库存</p>
+                                            <p className="text-white">{item.stock.toLocaleString()}</p>
+                                          </div>
+                                          <div>
+                                            <p className="text-industrial-500">差额</p>
+                                            <p className={item.sufficient ? 'text-emerald-400' : 'text-red-400'}>
+                                              {item.sufficient ? '+' : ''}
+                                              {(item.stock - item.needKg).toFixed(2)}
+                                            </p>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
