@@ -34,7 +34,7 @@ const formatRuntime = (minutes: number): string => {
 };
 
 const Dashboard: React.FC = () => {
-  const { dashboardStats, hourlyOutput, defectStats, machines, orders, molds } = useAppStore();
+  const { dashboardStats, hourlyOutput, defectStats, machines, orders, molds, openDrawer } = useAppStore();
 
   const activeOrders = orders
     .filter(o => o.status !== 'completed')
@@ -205,10 +205,7 @@ const Dashboard: React.FC = () => {
                       {currentOrder ? (
                         <button
                           className="text-primary-400 hover:underline text-left"
-                          onClick={() => {
-                            window.location.hash = '#/orders';
-                            useAppStore.getState().setActiveTab('orders');
-                          }}
+                          onClick={() => openDrawer(currentOrder.id)}
                           style={{ cursor: 'pointer' }}
                         >
                           <p className="font-medium">{currentOrder.orderNo}</p>

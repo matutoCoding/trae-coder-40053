@@ -4,10 +4,10 @@ import { useAppStore } from '@/store';
 import {
   Package, Thermometer, Palette, Plus, AlertTriangle,
   CheckCircle2, Clock, Calculator, ShoppingCart, Box,
-  ClipboardList, ChevronDown, ChevronRight, Search
+  ClipboardList, ChevronDown, ChevronRight, Search, Truck
 } from 'lucide-react';
 
-type TabKey = 'materials' | 'drying' | 'formula' | 'calc' | 'plans';
+type TabKey = 'materials' | 'drying' | 'formula' | 'calc' | 'plans' | 'purchase';
 
 const tabConfig = [
   { key: 'materials' as TabKey, label: '原料管理', icon: Package },
@@ -15,11 +15,12 @@ const tabConfig = [
   { key: 'formula' as TabKey, label: '色母配方', icon: Palette },
   { key: 'calc' as TabKey, label: '配方试算', icon: Calculator },
   { key: 'plans' as TabKey, label: '备料清单', icon: ClipboardList },
+  { key: 'purchase' as TabKey, label: '待采购', icon: Truck },
 ];
 
 export default function Materials() {
   const [activeTab, setActiveTab] = useState<TabKey>('materials');
-  const { materials, dryingRecords, colorFormulas, orders, materialPlans, saveMaterialPlan, setActiveTab: setStoreActiveTab } = useAppStore();
+  const { materials, dryingRecords, colorFormulas, orders, materialPlans, purchaseItems, saveMaterialPlan, issueMaterials, receivePurchase, openDrawer } = useAppStore();
 
   const [calcOrderId, setCalcOrderId] = useState('');
   const [calcFormulaId, setCalcFormulaId] = useState('');
@@ -27,7 +28,7 @@ export default function Materials() {
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   const [planSearch, setPlanSearch] = useState('');
-  const [planStatusFilter, setPlanStatusFilter] = useState<'all' | 'pending' | 'ready'>('all');
+  const [planStatusFilter, setPlanStatusFilter] = useState<'all' | 'pending' | 'ready' | 'issued'>('all');
   const [expandedPlanId, setExpandedPlanId] = useState<string | null>(null);
 
   const selectedOrder = orders.find(o => o.id === calcOrderId);
@@ -118,9 +119,16 @@ export default function Materials() {
   }, [materialPlans, planSearch, planStatusFilter]);
 
   const handleOrderClick = (orderId: string) => {
-    setStoreActiveTab('orders');
-    window.location.hash = '#/orders';
+    openDrawer(orderId);
   };
+
+  const [purchaseStatusFilter, setPurchaseStatusFilter] = useState<'all' | 'pending' | 'ordered' | 'received'>('all');
+
+  const filteredPurchaseItems = useMemo(() => {
+    return purchaseItems.filter(p => {
+      return purchaseStatusFilter === 'all' || p.status === purchaseStatusFilter;
+    });
+  }, [purchaseItems, purchaseStatusFilter]);
 
   return (
     <div className="p-6">
@@ -596,6 +604,16 @@ export default function Materials() {
                 >
                   已备齐
                 </button>
+                <button
+                  onClick={() => setPlanStatusFilter('issued')}
+                  className={`px-4 py-2 text-sm rounded-lg transition-all ${
+                    planStatusFilter === 'issued'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-industrial-800 text-industrial-300 hover:bg-industrial-700'
+                  }`}
+                >
+                  已领料
+                </button>
               </div>
             </div>
           </div>
@@ -665,6 +683,11 @@ export default function Materials() {
                                   <CheckCircle2 size={12} />
                                   已备齐
                                 </span>
+                              ) : plan.status === 'issued' ? (
+                                <span className="badge badge-info flex items-center gap-1 w-fit">
+                                  <CheckCircle2 size={12} />
+                                  已领料
+                                </span>
                               ) : (
                                 <span className="badge badge-warning flex items-center gap-1 w-fit">
                                   <Clock size={12} />
@@ -719,6 +742,33 @@ export default function Materials() {
                                       </div>
                                     ))}
                                   </div>
+                                  <div className="mt-4 pt-3 border-t border-industrial-700 flex items-center gap-3">
+                                    {plan.status === 'ready' && (
+                                      <button
+                                        onClick={() => {
+                                          if (window.confirm('确认领料出库？')) {
+                                            issueMaterials(plan.id, '仓库管理员');
+                                          }
+                                        }}
+                                        className="btn-primary flex items-center gap-1.5 text-sm"
+                                      >
+                                        <ShoppingCart size={14} />
+                                        领料出库
+                                      </button>
+                                    )}
+                                    {plan.status === 'pending' && (
+                                      <div className="text-red-400 text-sm flex items-center gap-1.5">
+                                        <AlertTriangle size={14} />
+                                        <span>待采购项：{plan.items.filter(i => !i.sufficient).map(i => i.materialName).join('、')} 不足</span>
+                                      </div>
+                                    )}
+                                    {plan.status === 'issued' && (
+                                      <span className="badge badge-info flex items-center gap-1 w-fit">
+                                        <CheckCircle2 size={12} />
+                                        已领料出库
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </td>
                             </tr>
@@ -726,6 +776,145 @@ export default function Materials() {
                         </>
                       );
                     })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'purchase' && (
+        <div className="space-y-5">
+          <div className="card-industrial p-5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => setPurchaseStatusFilter('all')}
+                className={`px-4 py-2 text-sm rounded-lg transition-all ${
+                  purchaseStatusFilter === 'all'
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-industrial-800 text-industrial-300 hover:bg-industrial-700'
+                }`}
+              >
+                全部
+              </button>
+              <button
+                onClick={() => setPurchaseStatusFilter('pending')}
+                className={`px-4 py-2 text-sm rounded-lg transition-all ${
+                  purchaseStatusFilter === 'pending'
+                    ? 'bg-amber-600 text-white'
+                    : 'bg-industrial-800 text-industrial-300 hover:bg-industrial-700'
+                }`}
+              >
+                待采购
+              </button>
+              <button
+                onClick={() => setPurchaseStatusFilter('ordered')}
+                className={`px-4 py-2 text-sm rounded-lg transition-all ${
+                  purchaseStatusFilter === 'ordered'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-industrial-800 text-industrial-300 hover:bg-industrial-700'
+                }`}
+              >
+                已下单
+              </button>
+              <button
+                onClick={() => setPurchaseStatusFilter('received')}
+                className={`px-4 py-2 text-sm rounded-lg transition-all ${
+                  purchaseStatusFilter === 'received'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-industrial-800 text-industrial-300 hover:bg-industrial-700'
+                }`}
+              >
+                已到货
+              </button>
+            </div>
+          </div>
+
+          <div className="card-industrial overflow-hidden">
+            {filteredPurchaseItems.length === 0 ? (
+              <div className="p-12 text-center">
+                <Truck className="w-12 h-12 text-industrial-600 mx-auto mb-3" />
+                <p className="text-industrial-400">暂无待采购记录</p>
+                <p className="text-industrial-500 text-sm mt-1">备料清单中领料出库时短缺的原料将自动出现在这里</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto scrollbar-thin">
+                <table className="table-industrial">
+                  <thead>
+                    <tr>
+                      <th>原料名</th>
+                      <th>需补充量 (kg)</th>
+                      <th>关联订单号</th>
+                      <th>状态</th>
+                      <th>创建时间</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredPurchaseItems.map((pi) => (
+                      <tr key={pi.id}>
+                        <td className="text-white font-medium">{pi.materialName}</td>
+                        <td className="text-red-400 font-medium">{pi.shortageKg}</td>
+                        <td>
+                          <span
+                            onClick={() => openDrawer(pi.orderId)}
+                            className="cursor-pointer text-primary-400 hover:text-primary-300 font-medium"
+                          >
+                            {pi.orderNo}
+                          </span>
+                        </td>
+                        <td>
+                          {pi.status === 'pending' && (
+                            <span className="badge badge-warning flex items-center gap-1 w-fit">
+                              <Clock size={12} />待采购
+                            </span>
+                          )}
+                          {pi.status === 'ordered' && (
+                            <span className="badge badge-info flex items-center gap-1 w-fit">
+                              <ShoppingCart size={12} />已下单
+                            </span>
+                          )}
+                          {pi.status === 'received' && (
+                            <span className="badge badge-success flex items-center gap-1 w-fit">
+                              <CheckCircle2 size={12} />已到货
+                            </span>
+                          )}
+                        </td>
+                        <td className="text-industrial-400 text-sm">{pi.createdAt}</td>
+                        <td>
+                          {pi.status === 'pending' && (
+                            <button
+                              onClick={() => {
+                                useAppStore.setState((state) => ({
+                                  purchaseItems: state.purchaseItems.map(p =>
+                                    p.id === pi.id ? { ...p, status: 'ordered' as const } : p
+                                  )
+                                }));
+                              }}
+                              className="btn-primary px-3 py-1.5 text-xs flex items-center gap-1.5"
+                            >
+                              <ShoppingCart size={12} />
+                              标记已下单
+                            </button>
+                          )}
+                          {pi.status === 'ordered' && (
+                            <button
+                              onClick={() => receivePurchase(pi.id)}
+                              className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 text-xs rounded-lg font-medium transition-colors flex items-center gap-1.5"
+                            >
+                              <CheckCircle2 size={12} />
+                              确认到货
+                            </button>
+                          )}
+                          {pi.status === 'received' && (
+                            <span className="badge badge-success flex items-center gap-1 w-fit">
+                              <CheckCircle2 size={12} />已到货
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>

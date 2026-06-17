@@ -28,7 +28,7 @@ interface ScheduleModalProps {
 }
 
 const ScheduleModal: React.FC<ScheduleModalProps> = ({ order, onClose, onSave }) => {
-  const { machines, molds } = useAppStore();
+  const { machines, molds, orders } = useAppStore();
   const [machineId, setMachineId] = useState('');
   const [moldId, setMoldId] = useState('');
   const [scheduledDate, setScheduledDate] = useState(order.scheduledDate || new Date().toISOString().split('T')[0]);
@@ -41,8 +41,27 @@ const ScheduleModal: React.FC<ScheduleModalProps> = ({ order, onClose, onSave })
 
   const canSave = machineId && moldId && scheduledDate;
 
+  const conflicts = useMemo(() => {
+    if (!machineId || !scheduledDate) return [];
+    return orders.filter(o =>
+      o.machineId === machineId &&
+      o.scheduledDate === scheduledDate &&
+      o.status !== 'completed' &&
+      o.status !== 'pending' &&
+      o.id !== order.id
+    );
+  }, [orders, machineId, scheduledDate, order.id]);
+
+  const suggestedMachines = useMemo(() => {
+    if (!machineId || conflicts.length === 0) return [];
+    return machines.filter(m => m.id !== machineId && (m.status === 'idle' || m.status === 'running')).slice(0, 3);
+  }, [machines, machineId, conflicts.length]);
+
   const handleSave = () => {
     if (canSave) {
+      if (conflicts.length > 0) {
+        if (!window.confirm(`该机台当天已有 ${conflicts.length} 个订单排产，确认强制排产吗？`)) return;
+      }
       onSave(order.id, machineId, moldId, scheduledDate);
     }
   };
@@ -149,6 +168,42 @@ const ScheduleModal: React.FC<ScheduleModalProps> = ({ order, onClose, onSave })
               />
             </div>
           </div>
+
+          {conflicts.length > 0 && (
+            <div className="border border-red-500/60 rounded-lg p-4 bg-red-900/10 space-y-3">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-400" />
+                <span className="text-red-400 font-medium text-sm">
+                  该机台当天已有 {conflicts.length} 个订单排产
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                {conflicts.map(c => (
+                  <div key={c.id} className="flex items-center gap-3 text-xs bg-red-900/20 rounded px-3 py-2">
+                    <span className="text-white font-medium">{c.orderNo}</span>
+                    <span className="text-industrial-300">{c.productName}</span>
+                    <span className="text-industrial-400">{c.quantity.toLocaleString()} 件</span>
+                  </div>
+                ))}
+              </div>
+              {suggestedMachines.length > 0 && (
+                <div>
+                  <p className="text-industrial-300 text-xs mb-2">建议替代机台：</p>
+                  <div className="flex flex-wrap gap-2">
+                    {suggestedMachines.map(m => (
+                      <button
+                        key={m.id}
+                        onClick={() => setMachineId(m.id)}
+                        className="px-3 py-1.5 text-xs rounded-lg border border-primary-500/50 bg-primary-500/10 text-primary-300 hover:bg-primary-500/20 transition-colors"
+                      >
+                        {m.machineNo} {m.name} ({m.tonnage}T)
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-end gap-3 p-5 border-t border-industrial-700">
@@ -156,10 +211,14 @@ const ScheduleModal: React.FC<ScheduleModalProps> = ({ order, onClose, onSave })
           <button
             onClick={handleSave}
             disabled={!canSave}
-            className={`btn-primary flex items-center gap-2 ${!canSave ? 'opacity-40 cursor-not-allowed' : ''}`}
+            className={`flex items-center gap-2 ${!canSave ? 'opacity-40 cursor-not-allowed' : ''} ${
+              conflicts.length > 0
+                ? 'bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 rounded-lg font-medium transition-colors'
+                : 'btn-primary'
+            }`}
           >
             <CheckCircle2 size={16} />
-            确认排产
+            {conflicts.length > 0 ? '确认排产（存在冲突）' : '确认排产'}
           </button>
         </div>
       </div>
@@ -188,8 +247,26 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({ machineId, mach
 
   const canSave = orderId && moldId && scheduledDate;
 
+  const conflicts = useMemo(() => {
+    if (!machineId || !scheduledDate) return [];
+    return orders.filter(o =>
+      o.machineId === machineId &&
+      o.scheduledDate === scheduledDate &&
+      o.status !== 'completed' &&
+      o.status !== 'pending'
+    );
+  }, [orders, machineId, scheduledDate]);
+
+  const suggestedMachines = useMemo(() => {
+    if (!machineId || conflicts.length === 0) return [];
+    return machines.filter(m => m.id !== machineId && (m.status === 'idle' || m.status === 'running')).slice(0, 3);
+  }, [machines, machineId, conflicts.length]);
+
   const handleSave = () => {
     if (canSave) {
+      if (conflicts.length > 0) {
+        if (!window.confirm(`该机台当天已有 ${conflicts.length} 个订单排产，确认强制排产吗？`)) return;
+      }
       onSave(orderId, machineId, moldId, scheduledDate);
     }
   };
@@ -267,6 +344,41 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({ machineId, mach
               </div>
             )}
           </div>
+
+          {conflicts.length > 0 && (
+            <div className="border border-red-500/60 rounded-lg p-4 bg-red-900/10 space-y-3">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-400" />
+                <span className="text-red-400 font-medium text-sm">
+                  该机台当天已有 {conflicts.length} 个订单排产
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                {conflicts.map(c => (
+                  <div key={c.id} className="flex items-center gap-3 text-xs bg-red-900/20 rounded px-3 py-2">
+                    <span className="text-white font-medium">{c.orderNo}</span>
+                    <span className="text-industrial-300">{c.productName}</span>
+                    <span className="text-industrial-400">{c.quantity.toLocaleString()} 件</span>
+                  </div>
+                ))}
+              </div>
+              {suggestedMachines.length > 0 && (
+                <div>
+                  <p className="text-industrial-300 text-xs mb-2">建议替代机台：</p>
+                  <div className="flex flex-wrap gap-2">
+                    {suggestedMachines.map(m => (
+                      <span
+                        key={m.id}
+                        className="px-3 py-1.5 text-xs rounded-lg border border-industrial-600 bg-industrial-800 text-industrial-300"
+                      >
+                        {m.machineNo} {m.name} ({m.tonnage}T)
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-end gap-3 p-5 border-t border-industrial-700">
@@ -274,10 +386,14 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({ machineId, mach
           <button
             onClick={handleSave}
             disabled={!canSave}
-            className={`btn-primary flex items-center gap-2 ${!canSave ? 'opacity-40 cursor-not-allowed' : ''}`}
+            className={`flex items-center gap-2 ${!canSave ? 'opacity-40 cursor-not-allowed' : ''} ${
+              conflicts.length > 0
+                ? 'bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 rounded-lg font-medium transition-colors'
+                : 'btn-primary'
+            }`}
           >
             <CheckCircle2 size={16} />
-            确认排产
+            {conflicts.length > 0 ? '确认排产（存在冲突）' : '确认排产'}
           </button>
         </div>
       </div>

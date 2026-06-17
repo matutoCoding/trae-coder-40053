@@ -179,7 +179,30 @@ export interface MaterialPlan {
   items: MaterialPlanItem[];
   allSufficient: boolean;
   createdAt: string;
-  status: 'pending' | 'ready';
+  status: 'pending' | 'ready' | 'issued';
+}
+
+export interface PickingRecord {
+  id: string;
+  planId: string;
+  orderId: string;
+  orderNo: string;
+  items: { materialName: string; qty: number; unit: string }[];
+  operator: string;
+  createdAt: string;
+}
+
+export interface PurchaseItem {
+  id: string;
+  materialName: string;
+  needKg: number;
+  stockKg: number;
+  shortageKg: number;
+  orderId: string;
+  orderNo: string;
+  status: 'pending' | 'ordered' | 'received';
+  createdAt: string;
+  receivedAt?: string;
 }
 
 export interface DashboardStats {

@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocat
 import { useEffect } from "react";
 import Sidebar from "@/components/Sidebar";
 import Header from "@/components/Header";
+import OrderDetailDrawer from "@/components/OrderDetailDrawer";
 import Dashboard from "@/pages/Dashboard";
 import Orders from "@/pages/Orders";
 import Materials from "@/pages/Materials";
@@ -44,6 +45,7 @@ function AppLayout() {
           </Routes>
         </main>
       </div>
+      <OrderDetailDrawer />
     </div>
   );
 }
