@@ -1,0 +1,112 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  line-height: 1.6;
+  font-weight: 400;
+  color-scheme: dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: #0f172a;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #334155 #0f172a;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: #0f172a;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: #334155;
+    border-radius: 3px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: #475569;
+  }
+}
+
+@layer components {
+  .status-dot {
+    @apply inline-block w-2 h-2 rounded-full;
+  }
+  .status-running {
+    @apply bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)];
+  }
+  .status-idle {
+    @apply bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)];
+  }
+  .status-maintenance {
+    @apply bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)];
+  }
+  .card-industrial {
+    @apply bg-industrial-800 border border-industrial-700 rounded-lg shadow-card;
+  }
+  .btn-primary {
+    @apply px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-md transition-all duration-200 font-medium text-sm;
+  }
+  .btn-secondary {
+    @apply px-4 py-2 bg-industrial-700 hover:bg-industrial-600 text-white rounded-md border border-industrial-600 transition-all duration-200 font-medium text-sm;
+  }
+  .btn-accent {
+    @apply px-4 py-2 bg-accent-600 hover:bg-accent-700 text-white rounded-md transition-all duration-200 font-medium text-sm;
+  }
+  .input-industrial {
+    @apply w-full px-3 py-2 bg-industrial-900 border border-industrial-600 rounded-md text-white placeholder-industrial-400 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-all text-sm;
+  }
+  .table-industrial {
+    @apply w-full text-sm text-left;
+  }
+  .table-industrial thead {
+    @apply bg-industrial-800 text-industrial-300 uppercase text-xs;
+  }
+  .table-industrial th {
+    @apply px-4 py-3 font-medium;
+  }
+  .table-industrial tbody tr {
+    @apply border-b border-industrial-700 transition-colors;
+  }
+  .table-industrial tbody tr:hover {
+    background-color: #172033;
+  }
+  .table-industrial td {
+    @apply px-4 py-3;
+  }
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+  .badge-success {
+    @apply bg-emerald-900/50 text-emerald-400 border border-emerald-800;
+  }
+  .badge-warning {
+    @apply bg-amber-900/50 text-amber-400 border border-amber-800;
+  }
+  .badge-danger {
+    @apply bg-red-900/50 text-red-400 border border-red-800;
+  }
+  .badge-info {
+    @apply bg-primary-900/50 text-primary-400 border border-primary-800;
+  }
+  .badge-secondary {
+    @apply bg-industrial-700 text-industrial-300 border border-industrial-600;
+  }
+}
