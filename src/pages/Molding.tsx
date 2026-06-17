@@ -6,9 +6,9 @@ import {
   Play, Calendar, Timer
 } from 'lucide-react';
 
-const formatRuntime = (seconds: number): string => {
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
+const formatRuntime = (minutes: number): string => {
+  const hrs = Math.floor(minutes / 60);
+  const mins = minutes % 60;
   return `${hrs}h ${mins}m`;
 };
 

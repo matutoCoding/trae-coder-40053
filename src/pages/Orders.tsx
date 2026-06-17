@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Filter, Plus, Calendar, User, Box } from 'lucide-react';
+import { Search, Filter, Plus, Calendar, User, Box, X, Settings, Layers, CheckCircle2 } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
 import { useAppStore } from '@/store';
 import type { Order, OrderStatus } from '@/types';
@@ -19,10 +19,157 @@ const statusBadgeMap: Record<OrderStatus, { label: string; className: string }> 
   completed: { label: '已完成', className: 'badge-success' },
 };
 
+interface ScheduleModalProps {
+  order: Order;
+  onClose: () => void;
+  onSave: (orderId: string, machineId: string, moldId: string, scheduledDate: string) => void;
+}
+
+const ScheduleModal: React.FC<ScheduleModalProps> = ({ order, onClose, onSave }) => {
+  const { machines, molds } = useAppStore();
+  const [machineId, setMachineId] = useState('');
+  const [moldId, setMoldId] = useState('');
+  const [scheduledDate, setScheduledDate] = useState(order.scheduledDate || new Date().toISOString().split('T')[0]);
+
+  const availableMachines = machines.filter(m => m.status === 'idle' || m.status === 'running');
+  const availableMolds = molds.filter(m => m.status === 'off_machine');
+
+  const selectedMachine = machines.find(m => m.id === machineId);
+  const selectedMold = molds.find(m => m.id === moldId);
+
+  const canSave = machineId && moldId && scheduledDate;
+
+  const handleSave = () => {
+    if (canSave) {
+      onSave(order.id, machineId, moldId, scheduledDate);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="card-industrial w-full max-w-lg p-0 animate-slide-in" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-industrial-700">
+          <div>
+            <h3 className="text-white font-semibold text-base">订单排产</h3>
+            <p className="text-industrial-400 text-sm mt-0.5">{order.orderNo} - {order.productName}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-industrial-700 transition-colors">
+            <X className="w-5 h-5 text-industrial-300" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-5">
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <p className="text-industrial-400">客户</p>
+              <p className="text-white font-medium">{order.customer}</p>
+            </div>
+            <div>
+              <p className="text-industrial-400">数量</p>
+              <p className="text-white font-medium">{order.quantity.toLocaleString()}</p>
+            </div>
+            <div>
+              <p className="text-industrial-400">原料</p>
+              <p className="text-white font-medium">{order.material}</p>
+            </div>
+            <div>
+              <p className="text-industrial-400">颜色</p>
+              <p className="text-white font-medium">{order.color}</p>
+            </div>
+            <div>
+              <p className="text-industrial-400">交期</p>
+              <p className="text-white font-medium">{order.dueDate}</p>
+            </div>
+          </div>
+
+          <div className="border-t border-industrial-700 pt-4 space-y-4">
+            <div>
+              <label className="block text-sm text-industrial-300 mb-1.5">
+                <Settings className="w-3.5 h-3.5 inline mr-1.5" />
+                选择机台 <span className="text-red-400">*</span>
+              </label>
+              <select
+                value={machineId}
+                onChange={e => setMachineId(e.target.value)}
+                className="input-industrial appearance-none"
+              >
+                <option value="">请选择机台</option>
+                {availableMachines.map(m => (
+                  <option key={m.id} value={m.id}>
+                    {m.machineNo} {m.name} ({m.tonnage}T) - {m.status === 'idle' ? '空闲' : '运行中'}
+                  </option>
+                ))}
+              </select>
+              {selectedMachine && (
+                <div className="mt-2 p-2 bg-industrial-900/50 rounded-lg text-xs text-industrial-300 flex items-center gap-3">
+                  <span>吨位: {selectedMachine.tonnage}T</span>
+                  <span>操作员: {selectedMachine.operator || '未分配'}</span>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm text-industrial-300 mb-1.5">
+                <Layers className="w-3.5 h-3.5 inline mr-1.5" />
+                选择模具 <span className="text-red-400">*</span>
+              </label>
+              <select
+                value={moldId}
+                onChange={e => setMoldId(e.target.value)}
+                className="input-industrial appearance-none"
+              >
+                <option value="">请选择模具</option>
+                {availableMolds.map(m => (
+                  <option key={m.id} value={m.id}>
+                    {m.moldNo} {m.name} ({m.cavities}腔) - 已用{m.usageCount}次
+                  </option>
+                ))}
+              </select>
+              {selectedMold && (
+                <div className="mt-2 p-2 bg-industrial-900/50 rounded-lg text-xs text-industrial-300 flex items-center gap-3">
+                  <span>腔数: {selectedMold.cavities}</span>
+                  <span>寿命: {selectedMold.usageCount}/{selectedMold.lifeCycle}</span>
+                  <span>材质: {selectedMold.material}</span>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm text-industrial-300 mb-1.5">
+                <Calendar className="w-3.5 h-3.5 inline mr-1.5" />
+                计划生产日期 <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="date"
+                value={scheduledDate}
+                onChange={e => setScheduledDate(e.target.value)}
+                className="input-industrial"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 p-5 border-t border-industrial-700">
+          <button onClick={onClose} className="btn-secondary">取消</button>
+          <button
+            onClick={handleSave}
+            disabled={!canSave}
+            className={`btn-primary flex items-center gap-2 ${!canSave ? 'opacity-40 cursor-not-allowed' : ''}`}
+          >
+            <CheckCircle2 size={16} />
+            确认排产
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const Orders: React.FC = () => {
-  const { orders, machines } = useAppStore();
+  const { orders, machines, scheduleOrder } = useAppStore();
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all');
+  const [schedulingOrder, setSchedulingOrder] = useState<Order | null>(null);
 
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
@@ -48,6 +195,11 @@ const Orders: React.FC = () => {
     return machine ? `${machine.machineNo}` : '-';
   };
 
+  const handleSchedule = (orderId: string, machineId: string, moldId: string, scheduledDate: string) => {
+    scheduleOrder(orderId, machineId, moldId, scheduledDate);
+    setSchedulingOrder(null);
+  };
+
   const stats = useMemo(() => {
     const total = orders.length;
     const pending = orders.filter((o) => o.status === 'pending').length;
@@ -60,7 +212,7 @@ const Orders: React.FC = () => {
     <div className="space-y-6">
       <PageHeader
         title="订单排产管理"
-        description="管理生产订单，跟踪生产进度与交付状态"
+        description="管理生产订单，安排机台与模具，跟踪生产进度与交付状态"
         actions={
           <button className="btn-primary flex items-center">
             <Plus className="w-4 h-4 mr-1.5" />
@@ -156,12 +308,13 @@ const Orders: React.FC = () => {
                 <th>状态</th>
                 <th>排产日期</th>
                 <th>交期</th>
+                <th>操作</th>
               </tr>
             </thead>
             <tbody>
               {filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="text-center py-12 text-industrial-400">
+                  <td colSpan={11} className="text-center py-12 text-industrial-400">
                     暂无符合条件的订单数据
                   </td>
                 </tr>
@@ -169,6 +322,7 @@ const Orders: React.FC = () => {
                 filteredOrders.map((order: Order) => {
                   const progress = Math.round((order.completedQty / order.quantity) * 100);
                   const badge = statusBadgeMap[order.status];
+                  const machineObj = order.machineId ? machines.find(m => m.id === order.machineId) : null;
                   return (
                     <tr key={order.id} className="align-middle">
                       <td>
@@ -207,7 +361,9 @@ const Orders: React.FC = () => {
                         </div>
                       </td>
                       <td className="text-industrial-300">
-                        {getMachineName(order.machineId)}
+                        {machineObj ? (
+                          <span className="text-primary-400">{machineObj.machineNo}</span>
+                        ) : '-'}
                       </td>
                       <td>
                         <span className={`badge ${badge.className}`}>{badge.label}</span>
@@ -230,6 +386,23 @@ const Orders: React.FC = () => {
                           </span>
                         </div>
                       </td>
+                      <td>
+                        {order.status === 'pending' && (
+                          <button
+                            onClick={() => setSchedulingOrder(order)}
+                            className="btn-primary px-3 py-1.5 text-xs flex items-center gap-1.5"
+                          >
+                            <Settings size={12} />
+                            排产
+                          </button>
+                        )}
+                        {order.status === 'scheduled' && (
+                          <span className="text-xs text-primary-400 flex items-center gap-1">
+                            <CheckCircle2 size={12} />
+                            已排产
+                          </span>
+                        )}
+                      </td>
                     </tr>
                   );
                 })
@@ -246,6 +419,14 @@ const Orders: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {schedulingOrder && (
+        <ScheduleModal
+          order={schedulingOrder}
+          onClose={() => setSchedulingOrder(null)}
+          onSave={handleSchedule}
+        />
+      )}
     </div>
   );
 };
