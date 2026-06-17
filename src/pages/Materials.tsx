@@ -1,13 +1,15 @@
 import { useState, useMemo } from 'react';
 import PageHeader from '@/components/PageHeader';
 import { useAppStore } from '@/store';
+import type { PickingSlip } from '@/types';
 import {
   Package, Thermometer, Palette, Plus, AlertTriangle,
   CheckCircle2, Clock, Calculator, ShoppingCart, Box,
-  ClipboardList, ChevronDown, ChevronRight, Search, Truck
+  ClipboardList, ChevronDown, ChevronRight, Search, Truck,
+  FileText, RefreshCw
 } from 'lucide-react';
 
-type TabKey = 'materials' | 'drying' | 'formula' | 'calc' | 'plans' | 'purchase';
+type TabKey = 'materials' | 'drying' | 'formula' | 'calc' | 'plans' | 'pickingSlips' | 'purchase';
 
 const tabConfig = [
   { key: 'materials' as TabKey, label: '原料管理', icon: Package },
@@ -15,21 +17,31 @@ const tabConfig = [
   { key: 'formula' as TabKey, label: '色母配方', icon: Palette },
   { key: 'calc' as TabKey, label: '配方试算', icon: Calculator },
   { key: 'plans' as TabKey, label: '备料清单', icon: ClipboardList },
+  { key: 'pickingSlips' as TabKey, label: '领料单', icon: FileText },
   { key: 'purchase' as TabKey, label: '待采购', icon: Truck },
 ];
 
 export default function Materials() {
   const [activeTab, setActiveTab] = useState<TabKey>('materials');
-  const { materials, dryingRecords, colorFormulas, orders, materialPlans, purchaseItems, saveMaterialPlan, issueMaterials, receivePurchase, openDrawer } = useAppStore();
+  const {
+    materials, dryingRecords, colorFormulas, orders, materialPlans,
+    purchaseItems, pickingSlips, saveMaterialPlan, createPickingSlip,
+    confirmPickingSlip, replenishPickingSlip, markPurchaseOrdered,
+    receivePurchase, openDrawer
+  } = useAppStore();
 
   const [calcOrderId, setCalcOrderId] = useState('');
   const [calcFormulaId, setCalcFormulaId] = useState('');
   const [calcQty, setCalcQty] = useState<number>(0);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [showPurchaseHint, setShowPurchaseHint] = useState(false);
 
   const [planSearch, setPlanSearch] = useState('');
   const [planStatusFilter, setPlanStatusFilter] = useState<'all' | 'pending' | 'ready' | 'issued'>('all');
   const [expandedPlanId, setExpandedPlanId] = useState<string | null>(null);
+
+  const [pickingSlipStatusFilter, setPickingSlipStatusFilter] = useState<'all' | 'pending' | 'partial' | 'completed'>('all');
+  const [expandedSlipId, setExpandedSlipId] = useState<string | null>(null);
 
   const selectedOrder = orders.find(o => o.id === calcOrderId);
   const selectedFormula = colorFormulas.find(f => f.id === calcFormulaId);
@@ -87,6 +99,7 @@ export default function Materials() {
     setCalcFormulaId('');
     setCalcQty(0);
     setSaveSuccess(false);
+    setShowPurchaseHint(false);
   };
 
   const handleSaveMaterialPlan = () => {
@@ -104,7 +117,17 @@ export default function Materials() {
       allSufficient: calcResults.allSufficient
     });
     setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 3000);
+    if (!calcResults.allSufficient) {
+      setShowPurchaseHint(true);
+    }
+    setTimeout(() => {
+      setSaveSuccess(false);
+      setShowPurchaseHint(false);
+    }, 5000);
+  };
+
+  const handleOrderClick = (orderId: string) => {
+    openDrawer(orderId);
   };
 
   const filteredMaterialPlans = useMemo(() => {
@@ -118,9 +141,11 @@ export default function Materials() {
     });
   }, [materialPlans, planSearch, planStatusFilter]);
 
-  const handleOrderClick = (orderId: string) => {
-    openDrawer(orderId);
-  };
+  const filteredPickingSlips = useMemo(() => {
+    return pickingSlips.filter(s => {
+      return pickingSlipStatusFilter === 'all' || s.status === pickingSlipStatusFilter;
+    });
+  }, [pickingSlips, pickingSlipStatusFilter]);
 
   const [purchaseStatusFilter, setPurchaseStatusFilter] = useState<'all' | 'pending' | 'ordered' | 'received'>('all');
 
@@ -129,6 +154,14 @@ export default function Materials() {
       return purchaseStatusFilter === 'all' || p.status === purchaseStatusFilter;
     });
   }, [purchaseItems, purchaseStatusFilter]);
+
+  const pickingSlipStatusLabel = (status: PickingSlip['status']) => {
+    switch (status) {
+      case 'pending': return { text: '待确认', badge: 'badge-info' as const, icon: <Clock size={12} /> };
+      case 'partial': return { text: '部分缺料', badge: 'badge-warning' as const, icon: <AlertTriangle size={12} /> };
+      case 'completed': return { text: '已出库', badge: 'badge-success' as const, icon: <CheckCircle2 size={12} /> };
+    }
+  };
 
   return (
     <div className="p-6">
@@ -532,6 +565,12 @@ export default function Materials() {
                           备料清单保存成功
                         </span>
                       )}
+                      {showPurchaseHint && (
+                        <span className="badge badge-warning flex items-center gap-1 w-fit mt-1">
+                          <Truck size={12} />
+                          已自动将缺料项加入待采购列表
+                        </span>
+                      )}
                     </div>
                     <button
                       onClick={handleSaveMaterialPlan}
@@ -642,6 +681,7 @@ export default function Materials() {
                   <tbody>
                     {filteredMaterialPlans.map((plan) => {
                       const isExpanded = expandedPlanId === plan.id;
+                      const hasExistingSlip = pickingSlips.some(s => s.planId === plan.id);
                       return (
                         <>
                           <tr key={plan.id}>
@@ -686,7 +726,7 @@ export default function Materials() {
                               ) : plan.status === 'issued' ? (
                                 <span className="badge badge-info flex items-center gap-1 w-fit">
                                   <CheckCircle2 size={12} />
-                                  已领料
+                                  已领料出库
                                 </span>
                               ) : (
                                 <span className="badge badge-warning flex items-center gap-1 w-fit">
@@ -744,17 +784,23 @@ export default function Materials() {
                                   </div>
                                   <div className="mt-4 pt-3 border-t border-industrial-700 flex items-center gap-3">
                                     {plan.status === 'ready' && (
-                                      <button
-                                        onClick={() => {
-                                          if (window.confirm('确认领料出库？')) {
-                                            issueMaterials(plan.id, '仓库管理员');
-                                          }
-                                        }}
-                                        className="btn-primary flex items-center gap-1.5 text-sm"
-                                      >
-                                        <ShoppingCart size={14} />
-                                        领料出库
-                                      </button>
+                                      <>
+                                        <button
+                                          onClick={() => {
+                                            createPickingSlip(plan.id);
+                                          }}
+                                          disabled={hasExistingSlip}
+                                          className={`btn-primary flex items-center gap-1.5 text-sm ${
+                                            hasExistingSlip ? 'opacity-50 cursor-not-allowed' : ''
+                                          }`}
+                                        >
+                                          <FileText size={14} />
+                                          {hasExistingSlip ? '已生成领料单' : '生成领料单'}
+                                        </button>
+                                        {hasExistingSlip && (
+                                          <span className="text-industrial-400 text-xs">请前往"领料单"Tab查看</span>
+                                        )}
+                                      </>
                                     )}
                                     {plan.status === 'pending' && (
                                       <div className="text-red-400 text-sm flex items-center gap-1.5">
@@ -781,6 +827,197 @@ export default function Materials() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {activeTab === 'pickingSlips' && (
+        <div className="space-y-5">
+          <div className="card-industrial p-5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => setPickingSlipStatusFilter('all')}
+                className={`px-4 py-2 text-sm rounded-lg transition-all ${
+                  pickingSlipStatusFilter === 'all'
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-industrial-800 text-industrial-300 hover:bg-industrial-700'
+                }`}
+              >
+                全部
+              </button>
+              <button
+                onClick={() => setPickingSlipStatusFilter('pending')}
+                className={`px-4 py-2 text-sm rounded-lg transition-all ${
+                  pickingSlipStatusFilter === 'pending'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-industrial-800 text-industrial-300 hover:bg-industrial-700'
+                }`}
+              >
+                待确认
+              </button>
+              <button
+                onClick={() => setPickingSlipStatusFilter('partial')}
+                className={`px-4 py-2 text-sm rounded-lg transition-all ${
+                  pickingSlipStatusFilter === 'partial'
+                    ? 'bg-amber-600 text-white'
+                    : 'bg-industrial-800 text-industrial-300 hover:bg-industrial-700'
+                }`}
+              >
+                部分缺料
+              </button>
+              <button
+                onClick={() => setPickingSlipStatusFilter('completed')}
+                className={`px-4 py-2 text-sm rounded-lg transition-all ${
+                  pickingSlipStatusFilter === 'completed'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-industrial-800 text-industrial-300 hover:bg-industrial-700'
+                }`}
+              >
+                已出库
+              </button>
+            </div>
+          </div>
+
+          {filteredPickingSlips.length === 0 ? (
+            <div className="card-industrial p-12 text-center">
+              <FileText className="w-12 h-12 text-industrial-600 mx-auto mb-3" />
+              <p className="text-industrial-400">暂无领料单</p>
+              <p className="text-industrial-500 text-sm mt-1">在备料清单中生成领料单后将显示在这里</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredPickingSlips.map((slip) => {
+                const isExpanded = expandedSlipId === slip.id;
+                const statusInfo = pickingSlipStatusLabel(slip.status);
+                const hasShortage = slip.items.some(i => i.status === 'shortage');
+                return (
+                  <div key={slip.id} className="card-industrial overflow-hidden">
+                    <div
+                      className="p-4 cursor-pointer hover:bg-industrial-800/50 transition-colors"
+                      onClick={() => setExpandedSlipId(isExpanded ? null : slip.id)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <button className="p-1 text-industrial-400 hover:text-white transition-colors">
+                            {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                          </button>
+                          <div>
+                            <div className="flex items-center gap-3 mb-1">
+                              <span
+                                onClick={(e) => { e.stopPropagation(); handleOrderClick(slip.orderId); }}
+                                className="text-primary-400 hover:text-primary-300 font-medium cursor-pointer"
+                              >
+                                {slip.orderNo}
+                              </span>
+                              <span className="text-industrial-500">|</span>
+                              <span className="text-white font-medium">{slip.formulaName}</span>
+                            </div>
+                            <p className="text-industrial-500 text-xs">{slip.createdAt}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className={`badge ${statusInfo.badge} flex items-center gap-1 w-fit`}>
+                            {statusInfo.icon}
+                            {statusInfo.text}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="border-t border-industrial-700 bg-industrial-900/30">
+                        <div className="p-4">
+                          <div className="overflow-x-auto scrollbar-thin">
+                            <table className="table-industrial">
+                              <thead>
+                                <tr>
+                                  <th>原料名</th>
+                                  <th>需求量 (kg)</th>
+                                  <th>已领量 (kg)</th>
+                                  <th>缺料量 (kg)</th>
+                                  <th>状态</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {slip.items.map((item, idx) => (
+                                  <tr key={idx}>
+                                    <td className="text-white font-medium">{item.materialName}</td>
+                                    <td className="text-industrial-300">{item.needKg}</td>
+                                    <td className="text-white">{item.pickedKg}</td>
+                                    <td className={item.shortKg > 0 ? 'text-red-400 font-medium' : 'text-industrial-500'}>
+                                      {item.shortKg > 0 ? item.shortKg : '-'}
+                                    </td>
+                                    <td>
+                                      {item.status === 'ready' ? (
+                                        <span className="badge badge-success text-xs">齐料</span>
+                                      ) : (
+                                        <span className="badge badge-danger text-xs">缺料</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          <div className="mt-4 pt-3 border-t border-industrial-700 flex items-center gap-3">
+                            {slip.status === 'pending' && (
+                              <button
+                                onClick={() => {
+                                  if (window.confirm('确认全部出库？')) {
+                                    confirmPickingSlip(slip.id, '仓库管理员');
+                                  }
+                                }}
+                                className="btn-primary flex items-center gap-1.5 text-sm"
+                              >
+                                <CheckCircle2 size={14} />
+                                确认出库
+                              </button>
+                            )}
+                            {slip.status === 'partial' && (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    if (window.confirm('确认部分出库？缺料项将自动加入待采购列表')) {
+                                      confirmPickingSlip(slip.id, '仓库管理员');
+                                    }
+                                  }}
+                                  className="btn-primary flex items-center gap-1.5 text-sm"
+                                >
+                                  <CheckCircle2 size={14} />
+                                  确认部分出库
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    replenishPickingSlip(slip.id);
+                                  }}
+                                  className="bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 text-sm rounded-lg font-medium transition-colors flex items-center gap-1.5"
+                                >
+                                  <RefreshCw size={14} />
+                                  补领
+                                </button>
+                                {hasShortage && (
+                                  <span className="text-amber-400 text-xs flex items-center gap-1">
+                                    <AlertTriangle size={12} />
+                                    缺料项：{slip.items.filter(i => i.status === 'shortage').map(i => i.materialName).join('、')}
+                                  </span>
+                                )}
+                              </>
+                            )}
+                            {slip.status === 'completed' && (
+                              <span className="badge badge-success flex items-center gap-1 w-fit">
+                                <CheckCircle2 size={12} />
+                                已出库
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -836,7 +1073,7 @@ export default function Materials() {
               <div className="p-12 text-center">
                 <Truck className="w-12 h-12 text-industrial-600 mx-auto mb-3" />
                 <p className="text-industrial-400">暂无待采购记录</p>
-                <p className="text-industrial-500 text-sm mt-1">备料清单中领料出库时短缺的原料将自动出现在这里</p>
+                <p className="text-industrial-500 text-sm mt-1">备料清单中缺料的原料将自动出现在这里</p>
               </div>
             ) : (
               <div className="overflow-x-auto scrollbar-thin">
@@ -885,13 +1122,7 @@ export default function Materials() {
                         <td>
                           {pi.status === 'pending' && (
                             <button
-                              onClick={() => {
-                                useAppStore.setState((state) => ({
-                                  purchaseItems: state.purchaseItems.map(p =>
-                                    p.id === pi.id ? { ...p, status: 'ordered' as const } : p
-                                  )
-                                }));
-                              }}
+                              onClick={() => markPurchaseOrdered(pi.id)}
                               className="btn-primary px-3 py-1.5 text-xs flex items-center gap-1.5"
                             >
                               <ShoppingCart size={12} />

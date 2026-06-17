@@ -9,7 +9,8 @@ import type {
   Order, Machine, Mold, MachineParam, Material, ColorFormula,
   DryingRecord, ProductionRecord, QualityCheck, MoldUsageRecord,
   EnergyRecord, DailyEnergySummary, DashboardStats, MaterialPlan,
-  MaterialPlanItem, PickingRecord, PurchaseItem
+  MaterialPlanItem, PickingRecord, PurchaseItem, PickingSlip,
+  PickingSlipItem, OrderStage
 } from '@/types';
 
 interface AppState {
@@ -31,11 +32,13 @@ interface AppState {
   materialPlans: MaterialPlan[];
   pickingRecords: PickingRecord[];
   purchaseItems: PurchaseItem[];
+  pickingSlips: PickingSlip[];
   drawerOrderId: string | null;
   activeTab: string;
   setActiveTab: (tab: string) => void;
   openDrawer: (orderId: string) => void;
   closeDrawer: () => void;
+  getOrderStage: (orderId: string) => OrderStage;
   addQualityCheck: (check: QualityCheck) => void;
   addMachineParam: (param: MachineParam) => void;
   scheduleOrder: (orderId: string, machineId: string, moldId: string, scheduledDate: string) => void;
@@ -51,9 +54,13 @@ interface AppState {
     items: MaterialPlanItem[];
     allSufficient: boolean;
   }) => void;
-  issueMaterials: (planId: string, operator: string) => void;
+  createPickingSlip: (planId: string) => void;
+  confirmPickingSlip: (slipId: string, operator: string) => void;
+  replenishPickingSlip: (slipId: string) => void;
+  markPurchaseOrdered: (purchaseItemId: string) => void;
   receivePurchase: (purchaseItemId: string) => void;
   checkScheduleConflict: (machineId: string, date: string) => Order[];
+  getAvailableMachines: (date: string, excludeMachineId?: string) => Machine[];
 }
 
 function nowStr(): string {
@@ -82,11 +89,27 @@ export const useAppStore = create<AppState>((set, get) => ({
   materialPlans: [],
   pickingRecords: [],
   purchaseItems: [],
+  pickingSlips: [],
   drawerOrderId: null,
   activeTab: 'dashboard',
   setActiveTab: (tab) => set({ activeTab: tab }),
   openDrawer: (orderId) => set({ drawerOrderId: orderId }),
   closeDrawer: () => set({ drawerOrderId: null }),
+  getOrderStage: (orderId) => {
+    const state = get();
+    const order = state.orders.find(o => o.id === orderId);
+    if (!order) return 'pending_schedule';
+    if (order.status === 'completed') return 'completed';
+    if (order.status === 'pending') return 'pending_schedule';
+    const plan = state.materialPlans.find(p => p.orderId === orderId);
+    if (!plan) return 'pending_material';
+    if (plan.status === 'pending') return 'pending_material';
+    if (plan.status === 'ready') return 'pre_production';
+    if (plan.status === 'issued') return order.status === 'producing' ? 'producing' : 'pre_production';
+    if (order.status === 'producing') return 'producing';
+    if (order.status === 'scheduled') return 'pre_production';
+    return 'pending_schedule';
+  },
   addQualityCheck: (check) => set((state) => ({ qualityChecks: [check, ...state.qualityChecks] })),
   addMachineParam: (param) => set((state) => ({
     machineParams: [param, ...state.machineParams]
@@ -222,46 +245,101 @@ export const useAppStore = create<AppState>((set, get) => ({
       molds: updatedMolds,
     };
   }),
-  saveMaterialPlan: (plan) => set((state) => ({
-    materialPlans: [
-      {
-        ...plan,
-        id: `mp_${Date.now()}`,
-        createdAt: nowStr(),
-        status: plan.allSufficient ? 'ready' : 'pending',
-      },
-      ...state.materialPlans,
-    ]
-  })),
-  issueMaterials: (planId, operator) => set((state) => {
+  saveMaterialPlan: (plan) => set((state) => {
+    const newPlan: MaterialPlan = {
+      ...plan,
+      id: `mp_${Date.now()}`,
+      createdAt: nowStr(),
+      status: plan.allSufficient ? 'ready' : 'pending',
+    };
+
+    const newPurchaseItems: PurchaseItem[] = [];
+    if (!plan.allSufficient) {
+      plan.items.forEach(item => {
+        if (!item.sufficient) {
+          const shortage = Math.round((item.needKg - item.stock) * 100) / 100;
+          newPurchaseItems.push({
+            id: `pi_${Date.now()}_${item.materialName}`,
+            materialName: item.materialName,
+            needKg: item.needKg,
+            stockKg: item.stock,
+            shortageKg: shortage,
+            orderId: plan.orderId,
+            orderNo: plan.orderNo,
+            status: 'pending',
+            createdAt: nowStr(),
+          });
+        }
+      });
+    }
+
+    return {
+      materialPlans: [newPlan, ...state.materialPlans],
+      purchaseItems: [...newPurchaseItems, ...state.purchaseItems],
+    };
+  }),
+  createPickingSlip: (planId) => set((state) => {
     const plan = state.materialPlans.find(p => p.id === planId);
-    if (!plan) return state;
+    if (!plan || plan.status === 'issued') return state;
 
-    const pickingItems: { materialName: string; qty: number; unit: string }[] = [];
-    const purchaseItems: PurchaseItem[] = [];
+    const slipItems: PickingSlipItem[] = plan.items.map(item => {
+      const mat = state.materials.find(m => m.name === item.materialName);
+      const stock = mat?.stock ?? 0;
+      const canPick = Math.min(item.needKg, stock);
+      const short = Math.round((item.needKg - canPick) * 100) / 100;
+      return {
+        materialName: item.materialName,
+        needKg: item.needKg,
+        pickedKg: Math.round(canPick * 100) / 100,
+        shortKg: short,
+        unit: 'kg',
+        status: short > 0 ? 'shortage' as const : 'ready' as const,
+      };
+    });
+
+    const hasShortage = slipItems.some(i => i.status === 'shortage');
+
+    const newSlip: PickingSlip = {
+      id: `ps_${Date.now()}`,
+      planId: plan.id,
+      orderId: plan.orderId,
+      orderNo: plan.orderNo,
+      formulaName: plan.formulaName,
+      items: slipItems,
+      status: hasShortage ? 'partial' : 'pending',
+      operator: '仓库管理员',
+      createdAt: nowStr(),
+    };
+
+    return {
+      pickingSlips: [newSlip, ...state.pickingSlips],
+    };
+  }),
+  confirmPickingSlip: (slipId, operator) => set((state) => {
+    const slip = state.pickingSlips.find(s => s.id === slipId);
+    if (!slip) return state;
+
     let updatedMaterials = [...state.materials];
+    const pickingItems: { materialName: string; qty: number; unit: string }[] = [];
+    const newPurchaseItems: PurchaseItem[] = [];
 
-    plan.items.forEach(item => {
+    slip.items.forEach(item => {
       const matIdx = updatedMaterials.findIndex(m => m.name === item.materialName);
       if (matIdx >= 0) {
         const mat = updatedMaterials[matIdx];
-        if (mat.stock >= item.needKg) {
-          updatedMaterials[matIdx] = { ...mat, stock: Math.round((mat.stock - item.needKg) * 100) / 100 };
-          pickingItems.push({ materialName: item.materialName, qty: item.needKg, unit: 'kg' });
-        } else {
-          const shortKg = Math.round((item.needKg - mat.stock) * 100) / 100;
-          if (mat.stock > 0) {
-            updatedMaterials[matIdx] = { ...mat, stock: 0 };
-            pickingItems.push({ materialName: item.materialName, qty: mat.stock, unit: 'kg' });
-          }
-          purchaseItems.push({
+        if (item.pickedKg > 0) {
+          updatedMaterials[matIdx] = { ...mat, stock: Math.round((mat.stock - item.pickedKg) * 100) / 100 };
+          pickingItems.push({ materialName: item.materialName, qty: item.pickedKg, unit: 'kg' });
+        }
+        if (item.shortKg > 0) {
+          newPurchaseItems.push({
             id: `pi_${Date.now()}_${item.materialName}`,
             materialName: item.materialName,
             needKg: item.needKg,
             stockKg: 0,
-            shortageKg: shortKg,
-            orderId: plan.orderId,
-            orderNo: plan.orderNo,
+            shortageKg: item.shortKg,
+            orderId: slip.orderId,
+            orderNo: slip.orderNo,
             status: 'pending',
             createdAt: nowStr(),
           });
@@ -271,25 +349,62 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const newPicking: PickingRecord = {
       id: `pk_${Date.now()}`,
-      planId: plan.id,
-      orderId: plan.orderId,
-      orderNo: plan.orderNo,
+      planId: slip.planId,
+      orderId: slip.orderId,
+      orderNo: slip.orderNo,
       items: pickingItems,
       operator,
       createdAt: nowStr(),
     };
 
-    const allSufficientAfterIssue = purchaseItems.length === 0;
+    const slipStatus: PickingSlip['status'] = slip.items.every(i => i.status === 'ready') ? 'completed' : 'partial';
+    const planStatus: MaterialPlan['status'] = slip.items.every(i => i.status === 'ready') ? 'issued' : 'pending';
 
     return {
       materials: updatedMaterials,
-      materialPlans: state.materialPlans.map(p =>
-        p.id === planId ? { ...p, status: allSufficientAfterIssue ? 'issued' as const : 'pending' as const } : p
-      ),
       pickingRecords: [newPicking, ...state.pickingRecords],
-      purchaseItems: [...purchaseItems, ...state.purchaseItems],
+      purchaseItems: [...newPurchaseItems, ...state.purchaseItems],
+      pickingSlips: state.pickingSlips.map(s =>
+        s.id === slipId ? { ...s, status: slipStatus, confirmedAt: nowStr() } : s
+      ),
+      materialPlans: state.materialPlans.map(p =>
+        p.id === slip.planId ? { ...p, status: planStatus } : p
+      ),
     };
   }),
+  replenishPickingSlip: (slipId) => set((state) => {
+    const slip = state.pickingSlips.find(s => s.id === slipId);
+    if (!slip) return state;
+
+    const updatedItems = slip.items.map(item => {
+      if (item.status === 'shortage') {
+        const mat = state.materials.find(m => m.name === item.materialName);
+        const stock = mat?.stock ?? 0;
+        const canPick = Math.min(item.shortKg, stock);
+        const newShort = Math.round((item.shortKg - canPick) * 100) / 100;
+        return {
+          ...item,
+          pickedKg: Math.round((item.pickedKg + canPick) * 100) / 100,
+          shortKg: newShort,
+          status: newShort > 0 ? 'shortage' as const : 'ready' as const,
+        };
+      }
+      return item;
+    });
+
+    const allReady = updatedItems.every(i => i.status === 'ready');
+
+    return {
+      pickingSlips: state.pickingSlips.map(s =>
+        s.id === slipId ? { ...s, items: updatedItems, status: allReady ? 'pending' : 'partial' } : s
+      ),
+    };
+  }),
+  markPurchaseOrdered: (purchaseItemId) => set((state) => ({
+    purchaseItems: state.purchaseItems.map(p =>
+      p.id === purchaseItemId ? { ...p, status: 'ordered' as const } : p
+    ),
+  })),
   receivePurchase: (purchaseItemId) => set((state) => {
     const pi = state.purchaseItems.find(p => p.id === purchaseItemId);
     if (!pi) return state;
@@ -300,7 +415,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const matIdx = state.materials.findIndex(m => m.name === pi.materialName);
     const updatedMaterials = matIdx >= 0
-      ? state.materials.map((m, i) => i === matIdx ? { ...m, stock: m.stock + pi.shortageKg } : m)
+      ? state.materials.map((m, i) => i === matIdx ? { ...m, stock: Math.round((m.stock + pi.shortageKg) * 100) / 100 } : m)
       : state.materials;
 
     const orderPurchases = updatedPurchase.filter(p => p.orderId === pi.orderId && p.status !== 'received');
@@ -317,10 +432,33 @@ export const useAppStore = create<AppState>((set, get) => ({
         )
       : state.materialPlans;
 
+    const updatedSlips = state.pickingSlips.map(s => {
+      if (s.orderId !== pi.orderId) return s;
+      const updatedItems = s.items.map(item => {
+        if (item.materialName === pi.materialName && item.status === 'shortage') {
+          const mat = updatedMaterials.find(m => m.name === item.materialName);
+          const stock = mat?.stock ?? 0;
+          const canPick = Math.min(item.shortKg, stock);
+          const newShort = Math.round((item.shortKg - canPick) * 100) / 100;
+          return {
+            ...item,
+            pickedKg: Math.round((item.pickedKg + canPick) * 100) / 100,
+            shortKg: newShort,
+            status: newShort > 0 ? 'shortage' as const : 'ready' as const,
+          };
+        }
+        return item;
+      });
+      const allReady = updatedItems.every(i => i.status === 'ready');
+      const newSlipStatus: PickingSlip['status'] = allReady ? 'pending' : (s.status === 'partial' ? 'partial' : s.status);
+      return { ...s, items: updatedItems, status: newSlipStatus };
+    });
+
     return {
       purchaseItems: updatedPurchase,
       materials: updatedMaterials,
       materialPlans: updatedPlans,
+      pickingSlips: updatedSlips,
     };
   }),
   checkScheduleConflict: (machineId, date) => {
@@ -328,5 +466,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     return state.orders.filter(o =>
       o.machineId === machineId && o.scheduledDate === date && o.status !== 'completed' && o.status !== 'pending'
     );
+  },
+  getAvailableMachines: (date, excludeMachineId) => {
+    const state = get();
+    const conflictCounts: Record<string, number> = {};
+    state.orders.forEach(o => {
+      if (o.machineId && o.scheduledDate === date && o.status !== 'completed' && o.status !== 'pending') {
+        conflictCounts[o.machineId] = (conflictCounts[o.machineId] || 0) + 1;
+      }
+    });
+    return state.machines.filter(m => {
+      if (m.status === 'maintenance') return false;
+      if (m.id === excludeMachineId) return false;
+      return (conflictCounts[m.id] || 0) === 0;
+    });
   },
 }));

@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Search, Filter, Plus, Calendar, User, Box, X, Settings, Layers, CheckCircle2, AlertTriangle, ChevronLeft, ChevronRight, List, GanttChart } from 'lucide-react';
+import React, { useState, useMemo, useCallback } from 'react';
+import { Search, Filter, Plus, Calendar, User, Box, X, Settings, Layers, CheckCircle2, AlertTriangle, ChevronLeft, ChevronRight, List, GanttChart, Clock, ArrowRight } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
 import { useAppStore } from '@/store';
 import type { Order, OrderStatus, Machine } from '@/types';
@@ -28,7 +28,7 @@ interface ScheduleModalProps {
 }
 
 const ScheduleModal: React.FC<ScheduleModalProps> = ({ order, onClose, onSave }) => {
-  const { machines, molds, orders } = useAppStore();
+  const { machines, molds, orders, getAvailableMachines } = useAppStore();
   const [machineId, setMachineId] = useState('');
   const [moldId, setMoldId] = useState('');
   const [scheduledDate, setScheduledDate] = useState(order.scheduledDate || new Date().toISOString().split('T')[0]);
@@ -54,8 +54,8 @@ const ScheduleModal: React.FC<ScheduleModalProps> = ({ order, onClose, onSave })
 
   const suggestedMachines = useMemo(() => {
     if (!machineId || conflicts.length === 0) return [];
-    return machines.filter(m => m.id !== machineId && (m.status === 'idle' || m.status === 'running')).slice(0, 3);
-  }, [machines, machineId, conflicts.length]);
+    return getAvailableMachines(scheduledDate, machineId);
+  }, [getAvailableMachines, scheduledDate, machineId, conflicts.length]);
 
   const handleSave = () => {
     if (canSave) {
@@ -186,22 +186,28 @@ const ScheduleModal: React.FC<ScheduleModalProps> = ({ order, onClose, onSave })
                   </div>
                 ))}
               </div>
-              {suggestedMachines.length > 0 && (
-                <div>
-                  <p className="text-industrial-300 text-xs mb-2">建议替代机台：</p>
+              <div>
+                <p className="text-industrial-300 text-xs mb-2">建议空闲机台：</p>
+                {suggestedMachines.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
                     {suggestedMachines.map(m => (
                       <button
                         key={m.id}
                         onClick={() => setMachineId(m.id)}
-                        className="px-3 py-1.5 text-xs rounded-lg border border-primary-500/50 bg-primary-500/10 text-primary-300 hover:bg-primary-500/20 transition-colors"
+                        className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+                          machineId === m.id
+                            ? 'border-primary-400 bg-primary-500/30 text-primary-200'
+                            : 'border-primary-500/50 bg-primary-500/10 text-primary-300 hover:bg-primary-500/20'
+                        }`}
                       >
                         {m.machineNo} {m.name} ({m.tonnage}T)
                       </button>
                     ))}
                   </div>
-                </div>
-              )}
+                ) : (
+                  <p className="text-industrial-500 text-xs">当天无空闲机台可替换</p>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -235,7 +241,7 @@ interface QuickScheduleModalProps {
 }
 
 const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({ machineId, machineName, scheduledDate, onClose, onSave }) => {
-  const { orders, molds, machines } = useAppStore();
+  const { orders, molds, machines, getAvailableMachines } = useAppStore();
   const [orderId, setOrderId] = useState('');
   const [moldId, setMoldId] = useState('');
 
@@ -259,15 +265,18 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({ machineId, mach
 
   const suggestedMachines = useMemo(() => {
     if (!machineId || conflicts.length === 0) return [];
-    return machines.filter(m => m.id !== machineId && (m.status === 'idle' || m.status === 'running')).slice(0, 3);
-  }, [machines, machineId, conflicts.length]);
+    return getAvailableMachines(scheduledDate, machineId);
+  }, [getAvailableMachines, scheduledDate, machineId, conflicts.length]);
+
+  const [selectedAltMachine, setSelectedAltMachine] = useState<string | null>(null);
 
   const handleSave = () => {
     if (canSave) {
-      if (conflicts.length > 0) {
+      const targetMachineId = selectedAltMachine || machineId;
+      if (conflicts.length > 0 && !selectedAltMachine) {
         if (!window.confirm(`该机台当天已有 ${conflicts.length} 个订单排产，确认强制排产吗？`)) return;
       }
-      onSave(orderId, machineId, moldId, scheduledDate);
+      onSave(orderId, targetMachineId, moldId, scheduledDate);
     }
   };
 
@@ -362,21 +371,29 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({ machineId, mach
                   </div>
                 ))}
               </div>
-              {suggestedMachines.length > 0 && (
-                <div>
-                  <p className="text-industrial-300 text-xs mb-2">建议替代机台：</p>
+              <div>
+                <p className="text-industrial-300 text-xs mb-2">建议空闲机台：</p>
+                {suggestedMachines.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
                     {suggestedMachines.map(m => (
-                      <span
+                      <button
                         key={m.id}
-                        className="px-3 py-1.5 text-xs rounded-lg border border-industrial-600 bg-industrial-800 text-industrial-300"
+                        onClick={() => setSelectedAltMachine(selectedAltMachine === m.id ? null : m.id)}
+                        className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+                          selectedAltMachine === m.id
+                            ? 'border-primary-400 bg-primary-500/30 text-primary-200'
+                            : 'border-primary-500/50 bg-primary-500/10 text-primary-300 hover:bg-primary-500/20'
+                        }`}
                       >
                         {m.machineNo} {m.name} ({m.tonnage}T)
-                      </span>
+                        {selectedAltMachine === m.id && ' ✓'}
+                      </button>
                     ))}
                   </div>
-                </div>
-              )}
+                ) : (
+                  <p className="text-industrial-500 text-xs">当天无空闲机台可替换</p>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -393,8 +410,150 @@ const QuickScheduleModal: React.FC<QuickScheduleModalProps> = ({ machineId, mach
             }`}
           >
             <CheckCircle2 size={16} />
-            {conflicts.length > 0 ? '确认排产（存在冲突）' : '确认排产'}
+            {selectedAltMachine ? '排产到选中机台' : conflicts.length > 0 ? '确认排产（存在冲突）' : '确认排产'}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+interface DayLoadModalProps {
+  machineId: string;
+  machineName: string;
+  date: string;
+  onClose: () => void;
+  onReschedule: (orderId: string, targetMachineId: string) => void;
+  openDrawer: (orderId: string) => void;
+}
+
+const DayLoadModal: React.FC<DayLoadModalProps> = ({ machineId, machineName, date, onClose, onReschedule, openDrawer }) => {
+  const { orders, machines, getAvailableMachines } = useAppStore();
+
+  const dayOrders = useMemo(() => {
+    return orders.filter(o =>
+      o.machineId === machineId &&
+      o.scheduledDate === date &&
+      o.status !== 'completed' &&
+      o.status !== 'pending'
+    );
+  }, [orders, machineId, date]);
+
+  const availableMachines = useMemo(() => {
+    return getAvailableMachines(date, machineId);
+  }, [getAvailableMachines, date, machineId]);
+
+  const hasConflict = dayOrders.length > 1;
+
+  const getEstHours = (quantity: number) => {
+    return Math.ceil(quantity / 1000 + 1);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="card-industrial w-full max-w-2xl p-0 animate-slide-in" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-industrial-700">
+          <div>
+            <h3 className="text-white font-semibold text-base">日负荷详情</h3>
+            <p className="text-industrial-400 text-sm mt-0.5">{machineName} · {date}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-industrial-700 transition-colors">
+            <X className="w-5 h-5 text-industrial-300" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div className="overflow-x-auto">
+            <table className="table-industrial">
+              <thead>
+                <tr>
+                  <th>订单号</th>
+                  <th>产品名</th>
+                  <th>数量</th>
+                  <th>预计用时</th>
+                  <th>状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dayOrders.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="text-center py-8 text-industrial-400">
+                      当天暂无排产订单
+                    </td>
+                  </tr>
+                ) : (
+                  dayOrders.map(o => {
+                    const badge = statusBadgeMap[o.status];
+                    return (
+                      <tr key={o.id}>
+                        <td>
+                          <button
+                            onClick={() => openDrawer(o.id)}
+                            className="text-blue-400 hover:text-blue-300 hover:underline font-medium"
+                          >
+                            {o.orderNo}
+                          </button>
+                        </td>
+                        <td className="text-white">{o.productName}</td>
+                        <td className="text-industrial-300">{o.quantity.toLocaleString()}</td>
+                        <td className="text-industrial-300">
+                          <div className="flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-industrial-500" />
+                            {getEstHours(o.quantity)} 小时
+                          </div>
+                        </td>
+                        <td>
+                          <span className={`badge ${badge.className}`}>{badge.label}</span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {hasConflict && (
+            <div className="border border-amber-500/40 rounded-lg p-4 bg-amber-900/10 space-y-3">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-400" />
+                <span className="text-amber-400 font-medium text-sm">
+                  该机台当天排产 {dayOrders.length} 个订单，建议拆分到其他机台
+                </span>
+              </div>
+
+              {availableMachines.length > 0 ? (
+                <div>
+                  <p className="text-industrial-300 text-xs mb-2">建议空闲机台：</p>
+                  <div className="flex flex-wrap gap-2">
+                    {availableMachines.map(m => (
+                      <button
+                        key={m.id}
+                        onClick={() => onReschedule(dayOrders[0].id, m.id)}
+                        className="px-3 py-1.5 text-xs rounded-lg border border-primary-500/50 bg-primary-500/10 text-primary-300 hover:bg-primary-500/20 transition-colors flex items-center gap-1.5"
+                      >
+                        <ArrowRight className="w-3 h-3" />
+                        {m.machineNo} {m.name} ({m.tonnage}T)
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-industrial-500 text-xs">当天无空闲机台可替换</p>
+              )}
+            </div>
+          )}
+
+          {!hasConflict && dayOrders.length === 1 && (
+            <div className="flex items-center gap-2 p-3 bg-emerald-900/10 border border-emerald-500/30 rounded-lg">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <span className="text-emerald-400 text-sm">该机台当天仅有 1 个订单排产，无冲突</span>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-3 p-5 border-t border-industrial-700">
+          <button onClick={onClose} className="btn-secondary">关闭</button>
         </div>
       </div>
     </div>
@@ -437,12 +596,13 @@ const getOrderProgressColor = (progress: number): string => {
 type ViewTab = 'list' | 'timeline';
 
 const Orders: React.FC = () => {
-  const { orders, machines, scheduleOrder } = useAppStore();
+  const { orders, machines, scheduleOrder, openDrawer, getAvailableMachines } = useAppStore();
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all');
   const [schedulingOrder, setSchedulingOrder] = useState<Order | null>(null);
   const [activeTab, setActiveTab] = useState<ViewTab>('list');
   const [quickSchedule, setQuickSchedule] = useState<{ machineId: string; machineName: string; scheduledDate: string } | null>(null);
+  const [dayLoadInfo, setDayLoadInfo] = useState<{ machineId: string; machineName: string; date: string } | null>(null);
   const dateScrollRef = React.useRef<HTMLDivElement>(null);
 
   const filteredOrders = useMemo(() => {
@@ -528,12 +688,27 @@ const Orders: React.FC = () => {
     setQuickSchedule(null);
   };
 
-  const handleQuickScheduleClick = (machine: Machine, date: string) => {
-    setQuickSchedule({
-      machineId: machine.id,
-      machineName: `${machine.machineNo} ${machine.name}`,
-      scheduledDate: date,
-    });
+  const handleReschedule = useCallback((orderId: string, targetMachineId: string) => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order || !order.moldId) return;
+    scheduleOrder(orderId, targetMachineId, order.moldId, order.scheduledDate);
+    setDayLoadInfo(null);
+  }, [orders, scheduleOrder]);
+
+  const handleQuickScheduleClick = (machine: Machine, date: string, hasOrders: boolean) => {
+    if (hasOrders) {
+      setDayLoadInfo({
+        machineId: machine.id,
+        machineName: `${machine.machineNo} ${machine.name}`,
+        date,
+      });
+    } else {
+      setQuickSchedule({
+        machineId: machine.id,
+        machineName: `${machine.machineNo} ${machine.name}`,
+        scheduledDate: date,
+      });
+    }
   };
 
   const stats = useMemo(() => {
@@ -706,7 +881,12 @@ const Orders: React.FC = () => {
                     return (
                       <tr key={order.id} className="align-middle">
                         <td>
-                          <span className="text-white font-medium">{order.orderNo}</span>
+                          <button
+                            onClick={() => openDrawer(order.id)}
+                            className="text-blue-400 hover:text-blue-300 hover:underline font-medium"
+                          >
+                            {order.orderNo}
+                          </button>
                         </td>
                         <td>
                           <div>
@@ -908,10 +1088,11 @@ const Orders: React.FC = () => {
                           const cellOrders = getOrdersForCell(machine.id, d.date);
                           const key = `${machine.id}_${d.date}`;
                           const hasConflict = (conflictMap[key] || 0) >= 2;
+                          const hasOrders = cellOrders.length > 0;
                           return (
                             <div
                               key={key}
-                              onClick={() => handleQuickScheduleClick(machine, d.date)}
+                              onClick={() => handleQuickScheduleClick(machine, d.date, hasOrders)}
                               className={`flex-1 min-w-[140px] h-36 border-r border-industrial-700/60 last:border-r-0 p-2 relative cursor-pointer transition-colors group ${
                                 hasConflict ? 'bg-red-500/5' : 'hover:bg-industrial-700/30'
                               }`}
@@ -946,6 +1127,8 @@ const Orders: React.FC = () => {
                                           e.stopPropagation();
                                           if (order.status === 'pending') {
                                             setSchedulingOrder(order);
+                                          } else {
+                                            openDrawer(order.id);
                                           }
                                         }}
                                       >
@@ -974,6 +1157,9 @@ const Orders: React.FC = () => {
                                       </div>
                                     );
                                   })}
+                                  <div className="text-[9px] text-industrial-500 text-center mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    点击查看日负荷详情
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -1022,6 +1208,17 @@ const Orders: React.FC = () => {
           scheduledDate={quickSchedule.scheduledDate}
           onClose={() => setQuickSchedule(null)}
           onSave={handleSchedule}
+        />
+      )}
+
+      {dayLoadInfo && (
+        <DayLoadModal
+          machineId={dayLoadInfo.machineId}
+          machineName={dayLoadInfo.machineName}
+          date={dayLoadInfo.date}
+          onClose={() => setDayLoadInfo(null)}
+          onReschedule={handleReschedule}
+          openDrawer={openDrawer}
         />
       )}
     </div>

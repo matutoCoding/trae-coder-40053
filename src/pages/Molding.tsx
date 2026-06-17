@@ -282,7 +282,11 @@ const Molding: React.FC = () => {
                     <div className="space-y-2 text-sm flex-1">
                       <div className="flex justify-between">
                         <span className="text-industrial-400 flex items-center"><Layers className="w-3.5 h-3.5 mr-1" />订单号</span>
-                        <span className="text-white font-medium">{order?.orderNo || '-'}</span>
+                        {order ? (
+                          <button className="text-primary-400 hover:underline" onClick={() => openDrawer(order.id)}>{order.orderNo}</button>
+                        ) : (
+                          <span className="text-white font-medium">-</span>
+                        )}
                       </div>
                       <div className="flex justify-between">
                         <span className="text-industrial-400 flex items-center"><Box className="w-3.5 h-3.5 mr-1" />模具</span>
@@ -373,7 +377,7 @@ const Molding: React.FC = () => {
                     return (
                       <tr key={record.id}>
                         <td className="text-white">{formatDateTime(record.startTime)}</td>
-                        <td className="text-primary-400">{record.orderNo}</td>
+                        <td><button className="text-primary-400 hover:underline" onClick={() => openDrawer(record.orderId)}>{record.orderNo}</button></td>
                         <td className="text-white">{record.machineName}</td>
                         <td className="text-white">{record.moldName}</td>
                         <td className="text-industrial-300">{formatDateTime(record.startTime)}</td>

@@ -1,4 +1,5 @@
 export type OrderStatus = 'pending' | 'scheduled' | 'producing' | 'completed';
+export type OrderStage = 'pending_schedule' | 'pending_material' | 'pre_production' | 'producing' | 'pending_quality' | 'completed';
 export type MachineStatus = 'running' | 'idle' | 'maintenance';
 export type MoldStatus = 'on_machine' | 'off_machine' | 'maintenance';
 export type QualityResult = 'pass' | 'fail';
@@ -203,6 +204,28 @@ export interface PurchaseItem {
   status: 'pending' | 'ordered' | 'received';
   createdAt: string;
   receivedAt?: string;
+}
+
+export interface PickingSlip {
+  id: string;
+  planId: string;
+  orderId: string;
+  orderNo: string;
+  formulaName: string;
+  items: PickingSlipItem[];
+  status: 'pending' | 'partial' | 'completed';
+  operator: string;
+  createdAt: string;
+  confirmedAt?: string;
+}
+
+export interface PickingSlipItem {
+  materialName: string;
+  needKg: number;
+  pickedKg: number;
+  shortKg: number;
+  unit: string;
+  status: 'ready' | 'shortage';
 }
 
 export interface DashboardStats {
